@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   View, 
   TextInput, 
@@ -21,7 +21,10 @@ import {
   updateDoc,
   doc,
   getDoc,
-  setDoc
+  setDoc,
+  where,
+  getDocs,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -102,7 +105,36 @@ export default function ChatScreen() {
     fetchFriendData();
   }, [userId, user]);
 
-  // Listen for messages
+  // Function to mark all unread messages as read
+  const markMessagesAsRead = useCallback(async () => {
+    if (!user || !chatId) return;
+  
+    try {
+      const unreadQuery = query(
+        collection(db, 'chats', chatId, 'messages'),
+        where('senderId', '!=', user.uid)
+      );
+  
+      const unreadSnapshot = await getDocs(unreadQuery);
+  
+      if (!unreadSnapshot.empty) {
+        const batch = writeBatch(db);
+  
+        unreadSnapshot.docs
+          .filter(doc => doc.data().status !== 'read')
+          .forEach(doc => {
+            batch.update(doc.ref, { status: 'read' });
+          });
+  
+        await batch.commit();
+        console.log(`Marked ${unreadSnapshot.docs.filter(doc => doc.data().status !== 'read').length} messages as read`);
+      }
+    } catch (error) {
+      console.error('Error marking messages as read:', error);
+    }
+  }, [user, chatId]);
+
+  // Listen for messages and mark them as read when viewed
   useEffect(() => {
     if (!user || !chatId) return;
     
@@ -121,16 +153,10 @@ export default function ChatScreen() {
       setMessages(newMessages);
       setLoading(false);
       
-      // Mark received messages as read
-      snapshot.docs.forEach(doc => {
-        const messageData = doc.data();
-        if (
-          messageData.senderId !== user?.uid && 
-          messageData.status !== 'read'
-        ) {
-          updateDoc(doc.ref, { status: 'read' });
-        }
-      });
+      // Mark received messages as read - doing this one by one
+      // could be inefficient, so we'll use the batch approach instead
+      // calling our markMessagesAsRead function
+      markMessagesAsRead();
     }, (error) => {
       console.error('Error listening to messages:', error);
       setLoading(false);
@@ -140,7 +166,7 @@ export default function ChatScreen() {
       // Make sure to unsubscribe when component unmounts
       unsubscribe();
     };
-  }, [chatId, user]);
+  }, [chatId, user, markMessagesAsRead]);
 
   const sendMessage = async () => {
     if (!user || !chatId || !message.trim()) return;
@@ -237,7 +263,10 @@ export default function ChatScreen() {
                   <View style={styles.messageFooter}>
                     <Text style={styles.timeText}>{formatTime(item.timestamp)}</Text>
                     {isMine && (
-                      <Text style={styles.statusText}>
+                      <Text style={[
+                        styles.statusText,
+                        item.status === 'read' ? styles.readStatus : styles.sentStatus
+                      ]}>
                         {item.status === 'read' ? '✓✓' : '✓'}
                       </Text>
                     )}
@@ -359,7 +388,12 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 12,
+  },
+  sentStatus: {
     color: '#7f8c8d',
+  },
+  readStatus: {
+    color: '#2ecc71',
   },
   inputContainer: {
     flexDirection: 'row',

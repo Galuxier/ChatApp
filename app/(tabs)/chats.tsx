@@ -21,9 +21,9 @@ export default function ChatsScreen() {
   const [loading, setLoading] = useState<boolean>(true);
   const { user } = useAuth();
 
-  // Clean approach - single useEffect
   useEffect(() => {
-    let unsubscribe: (() => void) | null = null;
+    let chatListenerUnsubscribe: (() => void) | null = null;
+    let messageListenersUnsubscribe: (() => void)[] = [];
     
     const fetchChats = async () => {
       if (!user) {
@@ -33,19 +33,13 @@ export default function ChatsScreen() {
       }
 
       try {
-        // console.log("Starting chat fetch for user:", user.uid);
         setLoading(true);
-        
-        // Get all chat IDs where the current user is participating
         const chatIdsQuery = query(
           collection(db, 'userChats'),
           where('userId', '==', user.uid)
         );
 
-        // Set up the snapshot listener
-        unsubscribe = onSnapshot(chatIdsQuery, async (chatIdsSnapshot) => {
-          console.log("Chat IDs snapshot received, count:", chatIdsSnapshot.size);
-          
+        chatListenerUnsubscribe = onSnapshot(chatIdsQuery, async (chatIdsSnapshot) => {
           if (chatIdsSnapshot.empty) {
             setChats([]);
             setLoading(false);
@@ -53,20 +47,20 @@ export default function ChatsScreen() {
           }
 
           try {
+            messageListenersUnsubscribe.forEach(unsub => unsub());
+            messageListenersUnsubscribe = [];
+            
             const chatPromises = chatIdsSnapshot.docs.map(async (docSnapshot) => {
               const chatData = docSnapshot.data();
               const chatId = chatData.chatId;
               const friendId = chatData.friendId;
               
-              // Get user info for this chat
               const userDoc = await getDoc(doc(db, 'users', friendId));
               const userData = userDoc.exists() ? userDoc.data() : null;
               
-              // Get chat info
               const chatDoc = await getDoc(doc(db, 'chats', chatId));
               const chatInfo = chatDoc.exists() ? chatDoc.data() : null;
               
-              // Get last message
               const messagesQuery = query(
                 collection(db, 'chats', chatId, 'messages'),
                 orderBy('timestamp', 'desc'),
@@ -82,10 +76,19 @@ export default function ChatsScreen() {
                 lastMessage = lastMessageData.text || 'No messages yet';
                 timestamp = lastMessageData.timestamp?.toDate() || new Date();
               } else if (chatInfo?.lastMessageTime) {
-                // Fallback to chat document if available
                 lastMessage = chatInfo.lastMessage || 'No messages yet';
                 timestamp = chatInfo.lastMessageTime.toDate() || new Date();
               }
+              
+              const unreadQuery = query(
+                collection(db, 'chats', chatId, 'messages'),
+                where('senderId', '!=', user.uid)
+              );
+
+              const unreadSnapshot = await getDocs(unreadQuery);
+              const unreadCount = unreadSnapshot.docs.filter(doc => 
+                doc.data().status !== 'read'
+              ).length;
               
               return {
                 id: chatId,
@@ -94,13 +97,47 @@ export default function ChatsScreen() {
                 profileImage: userData?.profileImage || null,
                 lastMessage,
                 timestamp,
-                unreadCount: 0,
+                unreadCount,
               };
             });
             
             const resolvedChats = await Promise.all(chatPromises);
-            // console.log("Resolved chats count:", resolvedChats.length);
-            setChats(resolvedChats);
+            const sortedChats = resolvedChats.sort((a, b) => b.timestamp - a.timestamp);
+            setChats(sortedChats);
+            
+            sortedChats.forEach(chat => {
+              const messagesListener = onSnapshot(
+                query(
+                  collection(db, 'chats', chat.id, 'messages'),
+                  orderBy('timestamp', 'desc')
+                ),
+                async (messagesSnapshot) => {
+                  if (messagesSnapshot.empty) return;
+                  
+                  const lastMessageDoc = messagesSnapshot.docs[0];
+                  const lastMessageData = lastMessageDoc.data();
+                  const unreadCount = messagesSnapshot.docs.filter(doc => {
+                    const data = doc.data();
+                    return data.senderId !== user.uid && data.status !== 'read';
+                  }).length;
+                  
+                  setChats(prevChats => [...prevChats.map(prevChat => 
+                    prevChat.id === chat.id 
+                      ? {
+                          ...prevChat,
+                          lastMessage: lastMessageData.text || 'No message',
+                          timestamp: lastMessageData.timestamp?.toDate() || new Date(),
+                          unreadCount
+                        } 
+                      : prevChat
+                  ).sort((a, b) => b.timestamp - a.timestamp)]);
+                },
+                error => {
+                  console.error(`Error in messages listener for chat ${chat.id}:`, error);
+                }
+              );
+              messageListenersUnsubscribe.push(messagesListener);
+            });
           } catch (err) {
             console.error("Error processing chat data:", err);
           } finally {
@@ -118,14 +155,20 @@ export default function ChatsScreen() {
 
     fetchChats();
 
-    // Clean up function
     return () => {
-      // console.log("Cleaning up chat listener");
-      if (unsubscribe) {
-        unsubscribe();
-      }
+      if (chatListenerUnsubscribe) chatListenerUnsubscribe();
+      messageListenersUnsubscribe.forEach(unsub => unsub());
     };
   }, [user]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      if (user && chats.length > 0) {
+        // No log here anymore
+      }
+      return () => {};
+    }, [user, chats])
+  );
 
   const formatTime = (timestamp: any) => {
     if (!timestamp) return '';
@@ -133,25 +176,13 @@ export default function ChatsScreen() {
     const now = new Date();
     const diff = now.getTime() - date.getTime();
     
-    // Today, show time
     if (diff < 24 * 60 * 60 * 1000) {
-      return date.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: true 
-      });
+      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
     }
-    
-    // Within a week, show day
     if (diff < 7 * 24 * 60 * 60 * 1000) {
       return date.toLocaleDateString('en-US', { weekday: 'short' });
     }
-    
-    // Older, show date
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric' 
-    });
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
   if (loading) {
@@ -195,7 +226,10 @@ export default function ChatsScreen() {
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <TouchableOpacity 
-              style={styles.chatItem}
+              style={[
+                styles.chatItem,
+                item.unreadCount > 0 && styles.unreadChatItem
+              ]}
               onPress={() => router.push(`/chat/${item.userId}`)}
             >
               {item.profileImage ? (
@@ -235,7 +269,6 @@ export default function ChatsScreen() {
 }
 
 const styles = StyleSheet.create({
-  // Your existing styles
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
@@ -314,6 +347,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
+  },
+  unreadChatItem: {
+    backgroundColor: '#ffcccc', // หรือเปลี่ยนเป็น '#e8f4f8' ตามที่คุณต้องการ
   },
   avatar: {
     width: 50,
