@@ -15,25 +15,25 @@ export default function LoginScreen() {
   // Redirect to chats if already logged in
   useEffect(() => {
     if (user) {
-      router.replace('/(tabs)/chats');
+      router.replace('/(tabs)/home');
     }
   }, [user]);
-
+  
   const handleLogin = async () => {
     if (!email || !password) {
       setError('Email and password are required');
       return;
     }
-
+  
     setIsLoading(true);
     setError('');
-
+  
     try {
       await signInWithEmailAndPassword(auth, email, password);
       // Explicitly reset loading state
       setIsLoading(false);
-      // Explicitly redirect to chats - this is a backup if the observer in index.tsx doesn't trigger
-      router.replace('/(tabs)/chats');
+      // Explicitly redirect to home - this is a backup if the observer in index.tsx doesn't trigger
+      router.replace('/(tabs)/home');
     } catch (err) {
       const errorMessage = (err as Error).message;
       setError(

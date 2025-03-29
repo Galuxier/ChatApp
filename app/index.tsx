@@ -1,4 +1,3 @@
-// app/index.tsx
 import { Redirect } from 'expo-router';
 import { useAuth } from '../context/auth';
 import { View, ActivityIndicator } from 'react-native';
@@ -14,5 +13,5 @@ export default function Index() {
     );
   }
   
-  return user ? <Redirect href="/(tabs)/chats" /> : <Redirect href="/login" />;
+  return user ? <Redirect href="/(tabs)/home" /> : <Redirect href="/login" />;
 }
