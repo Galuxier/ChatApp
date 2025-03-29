@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, Auth } from 'firebase/auth';
+import { initializeAuth, getReactNativePersistence } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
+import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 
 const firebaseConfig = {
     apiKey: "AIzaSyCYAVtqtxU2xKuP7-DYSFa0o9E2lL0Lw2M",
@@ -13,5 +14,10 @@ const firebaseConfig = {
   };
 
 const app = initializeApp(firebaseConfig);
-export const auth: Auth = getAuth(app);
+
+// ใช้ AsyncStorage เพื่อเก็บข้อมูล authentication state
+export const auth = initializeAuth(app, {
+  persistence: getReactNativePersistence(ReactNativeAsyncStorage)
+});
+
 export const db: Firestore = getFirestore(app);

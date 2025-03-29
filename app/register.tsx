@@ -1,24 +1,17 @@
 import React, { useState } from 'react';
-import { View, TextInput, StyleSheet, Text, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, TextInput, StyleSheet, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, setDoc, query, collection, where, getDocs } from 'firebase/firestore';
 import { auth, db } from '../firebase';
-import { StackNavigationProp } from '@react-navigation/stack';
-import { AuthStackParamList } from '../AuthHandler';
+import { router } from 'expo-router';
 
-type RegisterScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'Register'>;
-
-interface Props {
-  navigation: RegisterScreenNavigationProp;
-}
-
-export default function RegisterScreen({ navigation }: Props) {
-  const [email, setEmail] = useState<string>('');
-  const [password, setPassword] = useState<string>('');
-  const [displayName, setDisplayName] = useState<string>('');
-  const [pingId, setPingId] = useState<string>('');
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string>('');
+export default function RegisterScreen() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [pingId, setPingId] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
   // Function to check PingID availability
   const checkPingIdAvailability = async (id: string) => {
@@ -79,7 +72,7 @@ export default function RegisterScreen({ navigation }: Props) {
         createdAt: new Date(),
       });
       
-      // Navigation will be handled automatically by AuthHandler
+      // Navigation will be handled by index.tsx redirect
     } catch (error) {
       const errorMessage = (error as Error).message;
       setError(
@@ -147,7 +140,7 @@ export default function RegisterScreen({ navigation }: Props) {
       
       <View style={styles.loginContainer}>
         <Text style={styles.loginText}>Already have an account? </Text>
-        <TouchableOpacity onPress={() => navigation.navigate('Login')} disabled={isLoading}>
+        <TouchableOpacity onPress={() => router.push('/login')} disabled={isLoading}>
           <Text style={styles.loginLink}>Sign in</Text>
         </TouchableOpacity>
       </View>

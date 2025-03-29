@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { View, FlatList, Text, TouchableOpacity, StyleSheet, Image, ActivityIndicator } from 'react-native';
-import { collection, query, where, onSnapshot, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, getDocs, doc, getDoc, orderBy, limit } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '../App';
+import { RootStackParamList } from '../AuthHandler';
 
 type ChatListScreenNavigationProp = StackNavigationProp<RootStackParamList, 'ChatList'>;
 
@@ -38,20 +38,31 @@ export default function ChatListScreen({ navigation }: Props) {
           where('userId', '==', auth.currentUser!.uid)
         );
 
-        onSnapshot(chatIdsQuery, async (chatIdsSnapshot) => {
-          const chatPromises = chatIdsSnapshot.docs.map(async (doc) => {
-            const chatId = doc.data().chatId;
-            const otherUserId = chatId.replace(auth.currentUser!.uid, '').replace('_', '');
+        const unsubscribe = onSnapshot(chatIdsQuery, async (chatIdsSnapshot) => {
+          if (chatIdsSnapshot.empty) {
+            setChats([]);
+            setLoading(false);
+            return;
+          }
+
+          const chatPromises = chatIdsSnapshot.docs.map(async (docSnapshot) => {
+            const chatData = docSnapshot.data();
+            const chatId = chatData.chatId;
+            const friendId = chatData.friendId;
             
             // Get user info for this chat
-            const userDoc = await getDoc(doc(db, 'users', otherUserId));
-            const userData = userDoc.data();
+            const userDoc = await getDoc(doc(db, 'users', friendId));
+            const userData = userDoc.exists() ? userDoc.data() : null;
+            
+            // Get chat info
+            const chatDoc = await getDoc(doc(db, 'chats', chatId));
+            const chatInfo = chatDoc.exists() ? chatDoc.data() : null;
             
             // Get last message
             const messagesQuery = query(
               collection(db, 'chats', chatId, 'messages'),
-              // orderBy('timestamp', 'desc'),
-              // limit(1)
+              orderBy('timestamp', 'desc'),
+              limit(1)
             );
             
             const messagesSnapshot = await getDocs(messagesQuery);
@@ -59,14 +70,18 @@ export default function ChatListScreen({ navigation }: Props) {
             let timestamp = new Date();
             
             if (!messagesSnapshot.empty) {
-              const lastMessageDoc = messagesSnapshot.docs[0];
-              lastMessage = lastMessageDoc.data().text;
-              timestamp = lastMessageDoc.data().timestamp;
+              const lastMessageData = messagesSnapshot.docs[0].data();
+              lastMessage = lastMessageData.text || 'No messages yet';
+              timestamp = lastMessageData.timestamp?.toDate() || new Date();
+            } else if (chatInfo?.lastMessageTime) {
+              // Fallback to chat document if available
+              lastMessage = chatInfo.lastMessage || 'No messages yet';
+              timestamp = chatInfo.lastMessageTime.toDate() || new Date();
             }
             
             return {
               id: chatId,
-              userId: otherUserId,
+              userId: friendId,
               displayName: userData?.displayName || 'Unknown User',
               lastMessage,
               timestamp,
@@ -78,6 +93,8 @@ export default function ChatListScreen({ navigation }: Props) {
           setChats(resolvedChats);
           setLoading(false);
         });
+
+        return () => unsubscribe();
       } catch (error) {
         console.error('Error fetching chats:', error);
         setLoading(false);

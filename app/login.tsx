@@ -1,21 +1,15 @@
+// app/login.tsx
 import React, { useState } from 'react';
 import { View, TextInput, StyleSheet, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../firebase';
-import { StackNavigationProp } from '@react-navigation/stack';
-import { AuthStackParamList } from '../AuthHandler';
+import { router } from 'expo-router';
 
-type LoginScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'Login'>;
-
-interface Props {
-  navigation: LoginScreenNavigationProp;
-}
-
-export default function LoginScreen({ navigation }: Props) {
-  const [email, setEmail] = useState<string>('');
-  const [password, setPassword] = useState<string>('');
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string>('');
+export default function LoginScreen() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -28,7 +22,7 @@ export default function LoginScreen({ navigation }: Props) {
 
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // Navigation will be handled automatically by AuthHandler
+      // Navigation will be handled by index.tsx redirect
     } catch (err) {
       const errorMessage = (err as Error).message;
       setError(
@@ -87,7 +81,7 @@ export default function LoginScreen({ navigation }: Props) {
       
       <View style={styles.registerContainer}>
         <Text style={styles.registerText}>Don't have an account? </Text>
-        <TouchableOpacity onPress={() => navigation.navigate('Register')} disabled={isLoading}>
+        <TouchableOpacity onPress={() => router.push('/register')} disabled={isLoading}>
           <Text style={styles.registerLink}>Sign up</Text>
         </TouchableOpacity>
       </View>
@@ -96,6 +90,7 @@ export default function LoginScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  // ใช้ styles เดิมจาก LoginScreen
   container: {
     flex: 1,
     justifyContent: 'center',

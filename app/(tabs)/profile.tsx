@@ -1,28 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { View, TextInput, StyleSheet, Text, TouchableOpacity, Alert, ActivityIndicator, Clipboard } from 'react-native';
+import { View, TextInput, StyleSheet, Text, TouchableOpacity, Alert, ActivityIndicator, Platform } from 'react-native';
 import { updateProfile, signOut } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../firebase';
-import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '../AuthHandler';
+import { auth, db } from '../../firebase';
+import { useAuth } from '../../context/auth';
+import { router } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
 
-type ProfileScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Profile'>;
-
-interface Props {
-  navigation: ProfileScreenNavigationProp;
-}
-
-export default function ProfileScreen({ navigation }: Props) {
-  const [displayName, setDisplayName] = useState<string>(auth.currentUser?.displayName || '');
+export default function ProfileScreen() {
+  const { user } = useAuth();
+  const [displayName, setDisplayName] = useState<string>(user?.displayName || '');
   const [pingId, setPingId] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
   useEffect(() => {
     const fetchUserData = async () => {
-      if (auth.currentUser) {
+      if (user) {
         try {
-          const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
           if (userDoc.exists()) {
             const userData = userDoc.data();
             setPingId(userData.pingId || '');
@@ -36,10 +32,10 @@ export default function ProfileScreen({ navigation }: Props) {
     };
 
     fetchUserData();
-  }, []);
+  }, [user]);
 
   const handleUpdate = async () => {
-    if (!auth.currentUser) return;
+    if (!user) return;
     
     if (!displayName.trim()) {
       Alert.alert('Error', 'Display name cannot be empty');
@@ -50,10 +46,10 @@ export default function ProfileScreen({ navigation }: Props) {
     
     try {
       // Update Firebase Auth profile
-      await updateProfile(auth.currentUser, { displayName });
+      await updateProfile(user, { displayName });
       
       // Update Firestore user document
-      await setDoc(doc(db, 'users', auth.currentUser.uid), { 
+      await setDoc(doc(db, 'users', user.uid), { 
         displayName 
       }, { merge: true });
       
@@ -65,9 +61,9 @@ export default function ProfileScreen({ navigation }: Props) {
     }
   };
 
-  const copyToClipboard = () => {
+  const copyToClipboard = async () => {
     if (pingId) {
-      Clipboard.setString(pingId);
+      await Clipboard.setStringAsync(pingId);
       Alert.alert('Copied', 'Your Ping ID has been copied to clipboard');
     }
   };
@@ -82,15 +78,8 @@ export default function ProfileScreen({ navigation }: Props) {
           text: 'Logout', 
           onPress: async () => {
             try {
-              // จะทำการ reset navigation stack ก่อนที่จะ sign out
-              // เพื่อป้องกัน listener ที่อาจยังทำงานอยู่ในหน้าอื่นๆ
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Login' }],
-              });
-              
-              // หลังจาก navigate แล้วค่อย signOut
               await signOut(auth);
+              // Navigation will be handled by index.tsx redirect
             } catch (error) {
               console.error('Error during logout:', error);
             }
