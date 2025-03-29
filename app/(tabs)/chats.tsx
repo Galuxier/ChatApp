@@ -21,89 +21,111 @@ export default function ChatsScreen() {
   const [loading, setLoading] = useState<boolean>(true);
   const { user } = useAuth();
 
-  // React hook to refetch data when screen comes into focus
-  useFocusEffect(
-    React.useCallback(() => {
-      fetchChats();
-      return () => {}; // cleanup function (optional)
-    }, [user])
-  );
-
-  const fetchChats = async () => {
-    if (!user) {
-      return;
-    }
-
-    try {
-      // Get all chat IDs where the current user is participating
-      const chatIdsQuery = query(
-        collection(db, 'userChats'),
-        where('userId', '==', user.uid)
-      );
-
-      const unsubscribe = onSnapshot(chatIdsQuery, async (chatIdsSnapshot) => {
-        if (chatIdsSnapshot.empty) {
-          setChats([]);
-          setLoading(false);
-          return;
-        }
-
-        const chatPromises = chatIdsSnapshot.docs.map(async (docSnapshot) => {
-          const chatData = docSnapshot.data();
-          const chatId = chatData.chatId;
-          const friendId = chatData.friendId;
-          
-          // Get user info for this chat
-          const userDoc = await getDoc(doc(db, 'users', friendId));
-          const userData = userDoc.exists() ? userDoc.data() : null;
-          
-          // Get chat info
-          const chatDoc = await getDoc(doc(db, 'chats', chatId));
-          const chatInfo = chatDoc.exists() ? chatDoc.data() : null;
-          
-          // Get last message
-          const messagesQuery = query(
-            collection(db, 'chats', chatId, 'messages'),
-            orderBy('timestamp', 'desc'),
-            limit(1)
-          );
-          
-          const messagesSnapshot = await getDocs(messagesQuery);
-          let lastMessage = 'No messages yet';
-          let timestamp = new Date();
-          
-          if (!messagesSnapshot.empty) {
-            const lastMessageData = messagesSnapshot.docs[0].data();
-            lastMessage = lastMessageData.text || 'No messages yet';
-            timestamp = lastMessageData.timestamp?.toDate() || new Date();
-          } else if (chatInfo?.lastMessageTime) {
-            // Fallback to chat document if available
-            lastMessage = chatInfo.lastMessage || 'No messages yet';
-            timestamp = chatInfo.lastMessageTime.toDate() || new Date();
-          }
-          
-          return {
-            id: chatId,
-            userId: friendId,
-            displayName: userData?.displayName || 'Unknown User',
-            profileImage: userData?.profileImage || null,
-            lastMessage,
-            timestamp,
-            unreadCount: 0, // This would need to be implemented with a proper read/unread system
-          };
-        });
-        
-        const resolvedChats = await Promise.all(chatPromises);
-        setChats(resolvedChats);
+  // Clean approach - single useEffect
+  useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+    
+    const fetchChats = async () => {
+      if (!user) {
+        setChats([]);
         setLoading(false);
-      });
+        return;
+      }
 
-      return unsubscribe;
-    } catch (error) {
-      console.error('Error fetching chats:', error);
-      setLoading(false);
-    }
-  };
+      try {
+        // console.log("Starting chat fetch for user:", user.uid);
+        setLoading(true);
+        
+        // Get all chat IDs where the current user is participating
+        const chatIdsQuery = query(
+          collection(db, 'userChats'),
+          where('userId', '==', user.uid)
+        );
+
+        // Set up the snapshot listener
+        unsubscribe = onSnapshot(chatIdsQuery, async (chatIdsSnapshot) => {
+          console.log("Chat IDs snapshot received, count:", chatIdsSnapshot.size);
+          
+          if (chatIdsSnapshot.empty) {
+            setChats([]);
+            setLoading(false);
+            return;
+          }
+
+          try {
+            const chatPromises = chatIdsSnapshot.docs.map(async (docSnapshot) => {
+              const chatData = docSnapshot.data();
+              const chatId = chatData.chatId;
+              const friendId = chatData.friendId;
+              
+              // Get user info for this chat
+              const userDoc = await getDoc(doc(db, 'users', friendId));
+              const userData = userDoc.exists() ? userDoc.data() : null;
+              
+              // Get chat info
+              const chatDoc = await getDoc(doc(db, 'chats', chatId));
+              const chatInfo = chatDoc.exists() ? chatDoc.data() : null;
+              
+              // Get last message
+              const messagesQuery = query(
+                collection(db, 'chats', chatId, 'messages'),
+                orderBy('timestamp', 'desc'),
+                limit(1)
+              );
+              
+              const messagesSnapshot = await getDocs(messagesQuery);
+              let lastMessage = 'No messages yet';
+              let timestamp = new Date();
+              
+              if (!messagesSnapshot.empty) {
+                const lastMessageData = messagesSnapshot.docs[0].data();
+                lastMessage = lastMessageData.text || 'No messages yet';
+                timestamp = lastMessageData.timestamp?.toDate() || new Date();
+              } else if (chatInfo?.lastMessageTime) {
+                // Fallback to chat document if available
+                lastMessage = chatInfo.lastMessage || 'No messages yet';
+                timestamp = chatInfo.lastMessageTime.toDate() || new Date();
+              }
+              
+              return {
+                id: chatId,
+                userId: friendId,
+                displayName: userData?.displayName || 'Unknown User',
+                profileImage: userData?.profileImage || null,
+                lastMessage,
+                timestamp,
+                unreadCount: 0,
+              };
+            });
+            
+            const resolvedChats = await Promise.all(chatPromises);
+            // console.log("Resolved chats count:", resolvedChats.length);
+            setChats(resolvedChats);
+          } catch (err) {
+            console.error("Error processing chat data:", err);
+          } finally {
+            setLoading(false);
+          }
+        }, (error) => {
+          console.error('Error in chat snapshot listener:', error);
+          setLoading(false);
+        });
+      } catch (error) {
+        console.error('Error setting up chat listener:', error);
+        setLoading(false);
+      }
+    };
+
+    fetchChats();
+
+    // Clean up function
+    return () => {
+      // console.log("Cleaning up chat listener");
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [user]);
 
   const formatTime = (timestamp: any) => {
     if (!timestamp) return '';
@@ -213,6 +235,7 @@ export default function ChatsScreen() {
 }
 
 const styles = StyleSheet.create({
+  // Your existing styles
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',

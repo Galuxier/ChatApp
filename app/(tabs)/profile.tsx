@@ -33,20 +33,29 @@ export default function ProfileScreen() {
     const fetchUserData = async () => {
       if (user) {
         try {
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          // Only access the current user's document
+          const userDocRef = doc(db, 'users', user.uid);
+          const userDoc = await getDoc(userDocRef);
+          
           if (userDoc.exists()) {
             const userData = userDoc.data();
             setPingId(userData.pingId || '');
             setProfileImage(userData.profileImage || null);
+          } else {
+            console.log("User document doesn't exist!");
           }
         } catch (error) {
           console.error('Error fetching user data:', error);
+          // Add more specific error handling
+          if (error instanceof Error) {
+            Alert.alert('Error', `Failed to load profile: ${error.message}`);
+          }
         } finally {
           setIsLoading(false);
         }
       }
     };
-
+  
     fetchUserData();
   }, [user]);
 
@@ -59,14 +68,16 @@ export default function ProfileScreen() {
         return;
       }
     }
-
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+  
+    // Using the correct approach for your version of expo-image-picker
+    // @ts-ignore - Suppressing TypeScript error for deprecated API
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images, // Using the available but deprecated option
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.5,
     });
-
+  
     if (!result.canceled && result.assets && result.assets.length > 0) {
       const selectedAsset = result.assets[0];
       await uploadImage(selectedAsset.uri);
@@ -75,21 +86,37 @@ export default function ProfileScreen() {
 
   const uploadImage = async (uri: string) => {
     if (!user) return;
-
+  
     setIsUploadingImage(true);
     
     try {
-      const response = await fetch(uri);
-      const blob = await response.blob();
+      // Generate a unique file name
+      const fileName = `profile_${user.uid}_${Date.now()}`;
+      const storageRef = ref(storage, `profileImages/${fileName}`);
       
-      const fileRef = ref(storage, `profileImages/${user.uid}`);
-      await uploadBytes(fileRef, blob);
+      // Fetch the image and convert to blob
+      const fetchResponse = await fetch(uri);
+      const blob = await fetchResponse.blob();
       
-      const downloadURL = await getDownloadURL(fileRef);
+      // Log for debugging
+      console.log("Uploading image:", {
+        uri,
+        fileName,
+        contentType: blob.type,
+        size: blob.size
+      });
       
-      // Update profile image URL in Firestore
-      await setDoc(doc(db, 'users', user.uid), { 
-        profileImage: downloadURL 
+      // Upload to Firebase Storage
+      const uploadTask = await uploadBytes(storageRef, blob);
+      console.log("Upload successful, getting download URL...");
+      
+      // Get download URL
+      const downloadURL = await getDownloadURL(storageRef);
+      console.log("Download URL obtained:", downloadURL);
+      
+      // Update Firestore
+      await setDoc(doc(db, 'users', user.uid), {
+        profileImage: downloadURL
       }, { merge: true });
       
       // Update local state
@@ -98,7 +125,13 @@ export default function ProfileScreen() {
       Alert.alert('Success', 'Profile picture updated successfully');
     } catch (error) {
       console.error('Error uploading image:', error);
-      Alert.alert('Error', 'Failed to upload profile picture. Please try again.');
+      
+      // More detailed error message
+      if (error instanceof Error) {
+        Alert.alert('Error', `Failed to upload: ${error.message}`);
+      } else {
+        Alert.alert('Error', 'Failed to upload profile picture. Please try again.');
+      }
     } finally {
       setIsUploadingImage(false);
     }
@@ -148,8 +181,13 @@ export default function ProfileScreen() {
           text: 'Logout', 
           onPress: async () => {
             try {
+              // First sign out from Firebase
               await signOut(auth);
-              router.replace('/login');
+              
+              // Then explicitly navigate to login
+              setTimeout(() => {
+                router.replace('/login');
+              }, 100);
             } catch (error) {
               console.error('Error during logout:', error);
               Alert.alert('Error', 'Failed to logout. Please try again.');
