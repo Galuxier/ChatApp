@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,12 +9,41 @@ import {
   Image,
   ActivityIndicator,
   RefreshControl,
-  Alert
+  Alert,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
-import { collection, query, orderBy, limit, getDocs, addDoc, doc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { 
+  collection, 
+  query, 
+  orderBy, 
+  limit, 
+  getDocs, 
+  addDoc, 
+  doc, 
+  getDoc, 
+  updateDoc, 
+  where, 
+  deleteDoc, // เพิ่ม deleteDoc
+} from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/auth';
+
+interface Comment {
+  id: string;
+  userId: string;
+  userName: string;
+  userImage: string | null;
+  text: string;
+  timestamp: Date;
+}
+
+interface PostLike {
+  userId: string;
+  timestamp: Date;
+}
 
 interface Post {
   id: string;
@@ -23,7 +52,11 @@ interface Post {
   userImage: string | null;
   text: string;
   timestamp: Date;
-  likes: number;
+  likes: PostLike[];
+  likeCount: number;
+  commentCount: number;
+  comments?: Comment[];
+  isLikedByMe?: boolean;
 }
 
 export default function HomeScreen() {
@@ -37,6 +70,14 @@ export default function HomeScreen() {
     displayName: string;
     profileImage: string | null;
   } | null>(null);
+  const [commentModalVisible, setCommentModalVisible] = useState(false);
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [newComment, setNewComment] = useState('');
+  const [submittingComment, setSubmittingComment] = useState(false);
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [friendIds, setFriendIds] = useState<string[]>([]);
+  
+  const commentInputRef = useRef<TextInput>(null);
 
   // Fetch user data
   useEffect(() => {
@@ -49,7 +90,7 @@ export default function HomeScreen() {
           const data = userDoc.data();
           setUserData({
             displayName: data.displayName || 'Anonymous',
-            profileImage: data.profileImage || null
+            profileImage: data.profileImage || null,
           });
         }
       } catch (error) {
@@ -59,16 +100,44 @@ export default function HomeScreen() {
 
     fetchUserData();
   }, [user]);
+  
+  // Get list of friend IDs
+  useEffect(() => {
+    const fetchFriendIds = async () => {
+      if (!user) return;
+      
+      try {
+        const userChatsQuery = query(
+          collection(db, 'userChats'),
+          where('userId', '==', user.uid)
+        );
+        
+        const userChatsSnapshot = await getDocs(userChatsQuery);
+        const friendIdsList = userChatsSnapshot.docs.map(doc => doc.data().friendId);
+        
+        setFriendIds([...friendIdsList, user.uid]);
+      } catch (error) {
+        console.error('Error fetching friend IDs:', error);
+      }
+    };
+    
+    fetchFriendIds();
+  }, [user]);
 
-  // Fetch posts
+  // Fetch posts from friends
   const fetchPosts = async () => {
-    if (!user) return;
+    if (!user || friendIds.length === 0) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
 
     try {
       setLoading(true);
       
       const postsQuery = query(
         collection(db, 'posts'),
+        where('userId', 'in', friendIds),
         orderBy('timestamp', 'desc'),
         limit(20)
       );
@@ -79,9 +148,17 @@ export default function HomeScreen() {
       for (const postDoc of postsSnapshot.docs) {
         const postData = postDoc.data();
         
-        // Fetch user info for each post
         const userDoc = await getDoc(doc(db, 'users', postData.userId));
         const userData = userDoc.exists() ? userDoc.data() : { displayName: 'Unknown User' };
+        
+        const commentsQuery = query(
+          collection(db, 'posts', postDoc.id, 'comments'),
+          orderBy('timestamp', 'desc')
+        );
+        const commentsSnapshot = await getDocs(commentsQuery);
+        
+        const likesArray = postData.likes || [];
+        const isLikedByMe = likesArray.some((like: any) => like.userId === user.uid);
         
         postsData.push({
           id: postDoc.id,
@@ -90,7 +167,10 @@ export default function HomeScreen() {
           userImage: userData.profileImage || null,
           text: postData.text,
           timestamp: postData.timestamp?.toDate() || new Date(),
-          likes: postData.likes || 0
+          likes: postData.likes || [],
+          likeCount: postData.likes?.length || 0,
+          commentCount: commentsSnapshot.size,
+          isLikedByMe,
         });
       }
       
@@ -105,8 +185,10 @@ export default function HomeScreen() {
   };
 
   useEffect(() => {
-    fetchPosts();
-  }, [user]);
+    if (friendIds.length > 0) {
+      fetchPosts();
+    }
+  }, [friendIds]);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -123,13 +205,13 @@ export default function HomeScreen() {
         userId: user.uid,
         text: newPostText.trim(),
         timestamp: new Date(),
-        likes: 0,
-        createdAt: new Date()
+        likes: [],
+        likeCount: 0,
+        createdAt: new Date(),
       });
       
       setNewPostText('');
-      fetchPosts(); // Refresh posts after creating a new one
-      
+      fetchPosts();
     } catch (error) {
       console.error('Error creating post:', error);
       Alert.alert('Error', 'Could not create post. Please try again.');
@@ -139,16 +221,219 @@ export default function HomeScreen() {
   };
 
   const handleLikePost = async (postId: string) => {
-    // In a real app, you would update the like count in Firestore
-    // For this example, we'll just update the local state
-    setPosts(posts.map(post => 
-      post.id === postId 
-        ? { ...post, likes: post.likes + 1 } 
-        : post
-    ));
+    if (!user) return;
+    
+    try {
+      const postRef = doc(db, 'posts', postId);
+      const postDoc = await getDoc(postRef);
+      
+      if (!postDoc.exists()) {
+        console.error('Post not found');
+        return;
+      }
+      
+      const postData = postDoc.data();
+      const likes = postData.likes || [];
+      const isLiked = likes.some((like: any) => like.userId === user.uid);
+      
+      if (isLiked) {
+        await updateDoc(postRef, {
+          likes: likes.filter((like: any) => like.userId !== user.uid),
+        });
+        
+        setPosts(posts.map(post => 
+          post.id === postId 
+            ? { 
+                ...post, 
+                likes: post.likes.filter(like => like.userId !== user.uid),
+                likeCount: post.likeCount - 1,
+                isLikedByMe: false 
+              } 
+            : post
+        ));
+      } else {
+        const newLike = {
+          userId: user.uid,
+          timestamp: new Date(),
+        };
+        
+        await updateDoc(postRef, {
+          likes: [...likes, newLike],
+        });
+        
+        setPosts(posts.map(post => 
+          post.id === postId 
+            ? { 
+                ...post, 
+                likes: [...post.likes, newLike],
+                likeCount: post.likeCount + 1,
+                isLikedByMe: true 
+              } 
+            : post
+        ));
+      }
+    } catch (error) {
+      console.error('Error updating like:', error);
+    }
   };
 
-  // Format timestamp to readable format
+  // ฟังก์ชันลบโพสต์
+  const handleDeletePost = async (postId: string) => {
+    if (!user) return;
+
+    Alert.alert(
+      'Delete Post',
+      'Are you sure you want to delete this post?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // ลบโพสต์จาก Firestore
+              await deleteDoc(doc(db, 'posts', postId));
+              
+              // อัปเดต state โดยลบโพสต์ออกจากรายการ
+              setPosts(posts.filter(post => post.id !== postId));
+            } catch (error) {
+              console.error('Error deleting post:', error);
+              Alert.alert('Error', 'Could not delete post. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const openCommentModal = async (post: Post) => {
+    setSelectedPost(post);
+    setCommentModalVisible(true);
+    setLoadingComments(true);
+    
+    try {
+      const commentsQuery = query(
+        collection(db, 'posts', post.id, 'comments'),
+        orderBy('timestamp', 'desc')
+      );
+      
+      const commentsSnapshot = await getDocs(commentsQuery);
+      const commentsData: Comment[] = [];
+      
+      for (const commentDoc of commentsSnapshot.docs) {
+        const commentData = commentDoc.data();
+        
+        const userDoc = await getDoc(doc(db, 'users', commentData.userId));
+        const userData = userDoc.exists() ? userDoc.data() : { displayName: 'Unknown User' };
+        
+        commentsData.push({
+          id: commentDoc.id,
+          userId: commentData.userId,
+          userName: userData.displayName || 'Unknown User',
+          userImage: userData.profileImage || null,
+          text: commentData.text,
+          timestamp: commentData.timestamp?.toDate() || new Date(),
+        });
+      }
+      
+      setSelectedPost({ ...post, comments: commentsData });
+    } catch (error) {
+      console.error('Error fetching comments:', error);
+    } finally {
+      setLoadingComments(false);
+    }
+  };
+  
+  const addComment = async () => {
+    if (!user || !selectedPost || !newComment.trim()) return;
+    
+    setSubmittingComment(true);
+    
+    try {
+      const newCommentData = {
+        userId: user.uid,
+        text: newComment.trim(),
+        timestamp: new Date(),
+      };
+      
+      await addDoc(collection(db, 'posts', selectedPost.id, 'comments'), newCommentData);
+      
+      setNewComment('');
+      
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      const userData = userDoc.exists() ? userDoc.data() : { displayName: 'Unknown User' };
+      
+      const newCommentObj: Comment = {
+        id: 'temp-id',
+        userId: user.uid,
+        userName: userData.displayName || 'Unknown User',
+        userImage: userData.profileImage || null,
+        text: newCommentData.text,
+        timestamp: newCommentData.timestamp,
+      };
+      
+      if (selectedPost.comments) {
+        setSelectedPost({
+          ...selectedPost,
+          comments: [newCommentObj, ...selectedPost.comments],
+          commentCount: selectedPost.commentCount + 1,
+        });
+      }
+      
+      setPosts(posts.map(post => 
+        post.id === selectedPost.id 
+          ? { ...post, commentCount: post.commentCount + 1 } 
+          : post
+      ));
+    } catch (error) {
+      console.error('Error adding comment:', error);
+      Alert.alert('Error', 'Could not add comment. Please try again.');
+    } finally {
+      setSubmittingComment(false);
+    }
+  };
+
+  // ฟังก์ชันลบคอมเมนต์
+  const handleDeleteComment = async (commentId: string) => {
+    if (!user || !selectedPost) return;
+
+    Alert.alert(
+      'Delete Comment',
+      'Are you sure you want to delete this comment?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // ลบคอมเมนต์จาก Firestore
+              await deleteDoc(doc(db, 'posts', selectedPost.id, 'comments', commentId));
+              
+              // อัปเดต state โดยลบคอมเมนต์ออกจากรายการ
+              if (selectedPost.comments) {
+                const updatedComments = selectedPost.comments.filter(comment => comment.id !== commentId);
+                setSelectedPost({
+                  ...selectedPost,
+                  comments: updatedComments,
+                  commentCount: selectedPost.commentCount - 1,
+                });
+                setPosts(posts.map(post => 
+                  post.id === selectedPost.id 
+                    ? { ...post, commentCount: post.commentCount - 1 } 
+                    : post
+                ));
+              }
+            } catch (error) {
+              console.error('Error deleting comment:', error);
+              Alert.alert('Error', 'Could not delete comment. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const formatTime = (date: Date) => {
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
@@ -215,7 +500,7 @@ export default function HomeScreen() {
             <TouchableOpacity
               style={[
                 styles.postButton,
-                (!newPostText.trim() || posting) && styles.disabledButton
+                (!newPostText.trim() || posting) && styles.disabledButton,
               ]}
               onPress={createPost}
               disabled={!newPostText.trim() || posting}
@@ -244,35 +529,193 @@ export default function HomeScreen() {
                 <Text style={styles.postUserName}>{item.userName}</Text>
                 <Text style={styles.postTime}>{formatTime(item.timestamp)}</Text>
               </View>
+              {item.userId === user?.uid && (
+                <TouchableOpacity
+                  style={styles.deletePostButton}
+                  onPress={() => handleDeletePost(item.id)}
+                >
+                  <FontAwesome name="trash" size={18} color="#e74c3c" />
+                </TouchableOpacity>
+              )}
             </View>
             
             <Text style={styles.postText}>{item.text}</Text>
             
+            <View style={styles.postStats}>
+              {item.likeCount > 0 && (
+                <Text style={styles.statText}>
+                  <FontAwesome name="thumbs-up" size={12} color="#3498db" /> {item.likeCount}
+                </Text>
+              )}
+              {item.commentCount > 0 && (
+                <Text style={styles.statText}>
+                  {item.commentCount} {item.commentCount === 1 ? 'comment' : 'comments'}
+                </Text>
+              )}
+            </View>
+            
             <View style={styles.postActions}>
               <TouchableOpacity 
-                style={styles.likeButton}
+                style={styles.actionButton}
                 onPress={() => handleLikePost(item.id)}
               >
-                <FontAwesome name="thumbs-o-up" size={18} color="#3498db" />
-                <Text style={styles.likeButtonText}>
-                  {item.likes > 0 ? `Like (${item.likes})` : 'Like'}
+                <FontAwesome 
+                  name={item.isLikedByMe ? "thumbs-up" : "thumbs-o-up"} 
+                  size={18} 
+                  color={item.isLikedByMe ? "#3498db" : "#7f8c8d"} 
+                />
+                <Text 
+                  style={[
+                    styles.actionButtonText, 
+                    item.isLikedByMe && styles.activeActionText,
+                  ]}
+                >
+                  Like
                 </Text>
               </TouchableOpacity>
               
-              <TouchableOpacity style={styles.commentButton}>
+              <TouchableOpacity 
+                style={styles.actionButton}
+                onPress={() => openCommentModal(item)}
+              >
                 <FontAwesome name="comment-o" size={18} color="#7f8c8d" />
-                <Text style={styles.commentButtonText}>Comment</Text>
+                <Text style={styles.actionButtonText}>Comment</Text>
               </TouchableOpacity>
             </View>
           </View>
         )}
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No posts yet.</Text>
-            <Text style={styles.emptySubText}>Be the first to share something!</Text>
-          </View>
+          friendIds.length > 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No posts yet.</Text>
+              <Text style={styles.emptySubText}>Be the first to share something!</Text>
+            </View>
+          ) : (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>Add friends to see their posts</Text>
+              <Text style={styles.emptySubText}>Find friends using the Chat tab</Text>
+            </View>
+          )
         }
       />
+      
+      {/* Comments Modal */}
+      <Modal
+        animationType="slide"
+        transparent={false}
+        visible={commentModalVisible}
+        onRequestClose={() => setCommentModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.modalContainer}
+        >
+          <View style={styles.modalHeader}>
+            <TouchableOpacity 
+              style={styles.closeButton} 
+              onPress={() => setCommentModalVisible(false)}
+            >
+              <FontAwesome name="arrow-left" size={20} color="#3498db" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Comments</Text>
+            <View style={styles.headerSpacer} />
+          </View>
+          
+          {selectedPost && (
+            <>
+              <View style={styles.modalPostPreview}>
+                <View style={styles.previewHeader}>
+                  {selectedPost.userImage ? (
+                    <Image source={{ uri: selectedPost.userImage }} style={styles.previewAvatar} />
+                  ) : (
+                    <View style={styles.previewAvatar}>
+                      <Text style={styles.avatarText}>
+                        {selectedPost.userName.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  <Text style={styles.previewUserName}>{selectedPost.userName}</Text>
+                </View>
+                <Text style={styles.previewText}>{selectedPost.text}</Text>
+              </View>
+              
+              {loadingComments ? (
+                <View style={styles.loadingCommentsContainer}>
+                  <ActivityIndicator size="small" color="#3498db" />
+                </View>
+              ) : (
+                <FlatList
+                  data={selectedPost.comments}
+                  keyExtractor={(item) => item.id}
+                  renderItem={({ item }) => (
+                    <View style={styles.commentItem}>
+                      {item.userImage ? (
+                        <Image source={{ uri: item.userImage }} style={styles.commentAvatar} />
+                      ) : (
+                        <View style={styles.commentAvatar}>
+                          <Text style={styles.commentAvatarText}>
+                            {item.userName.charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={styles.commentContent}>
+                        <View style={styles.commentHeader}>
+                          <Text style={styles.commentUserName}>{item.userName}</Text>
+                          {item.userId === user?.uid && (
+                            <TouchableOpacity
+                              style={styles.deleteCommentButton}
+                              onPress={() => handleDeleteComment(item.id)}
+                            >
+                              <FontAwesome name="trash" size={16} color="#e74c3c" />
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                        <Text style={styles.commentText}>{item.text}</Text>
+                        <Text style={styles.commentTime}>{formatTime(item.timestamp)}</Text>
+                      </View>
+                    </View>
+                  )}
+                  ListEmptyComponent={
+                    <View style={styles.emptyCommentsContainer}>
+                      <Text style={styles.emptyCommentsText}>No comments yet.</Text>
+                      <Text style={styles.emptyCommentsSubText}>Be the first to comment!</Text>
+                    </View>
+                  }
+                  contentContainerStyle={styles.commentsList}
+                />
+              )}
+            </>
+          )}
+          
+          <View style={styles.commentInputContainer}>
+            <TextInput
+              ref={commentInputRef}
+              style={styles.commentInput}
+              placeholder="Write a comment..."
+              value={newComment}
+              onChangeText={setNewComment}
+              multiline
+              maxLength={500}
+              editable={!submittingComment}
+              autoFocus={true}
+            />
+            <TouchableOpacity
+              style={[
+                styles.commentButton,
+                (!newComment.trim() || submittingComment) && styles.disabledButton,
+              ]}
+              onPress={addComment}
+              disabled={!newComment.trim() || submittingComment}
+            >
+              {submittingComment ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <FontAwesome name="send" size={18} color="white" />
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -380,42 +823,51 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#7f8c8d',
   },
+  deletePostButton: {
+    padding: 5,
+  },
   postText: {
     fontSize: 16,
     color: '#2c3e50',
     marginBottom: 15,
     lineHeight: 22,
   },
+  postStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    paddingBottom: 10,
+    marginBottom: 10,
+  },
+  statText: {
+    fontSize: 12,
+    color: '#7f8c8d',
+  },
   postActions: {
     flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-    paddingTop: 10,
+    justifyContent: 'space-around',
   },
-  likeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 20,
-    paddingVertical: 5,
-  },
-  likeButtonText: {
-    marginLeft: 5,
-    color: '#3498db',
-    fontSize: 14,
-  },
-  commentButton: {
+  actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 5,
+    paddingHorizontal: 20,
   },
-  commentButtonText: {
+  actionButtonText: {
     marginLeft: 5,
     color: '#7f8c8d',
     fontSize: 14,
   },
+  activeActionText: {
+    color: '#3498db',
+  },
   emptyContainer: {
-    padding: 20,
+    padding: 40,
     alignItems: 'center',
+    backgroundColor: 'white',
+    marginTop: 10,
+    borderRadius: 10,
   },
   emptyText: {
     fontSize: 18,
@@ -426,5 +878,166 @@ const styles = StyleSheet.create({
   emptySubText: {
     fontSize: 14,
     color: '#95a5a6',
+    textAlign: 'center',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 15,
+    paddingVertical: 15,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  closeButton: {
+    padding: 5,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    textAlign: 'center',
+  },
+  headerSpacer: {
+    width: 30,
+  },
+  modalPostPreview: {
+    backgroundColor: 'white',
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  previewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  previewAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#3498db',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  previewUserName: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+  },
+  previewText: {
+    fontSize: 14,
+    color: '#2c3e50',
+    lineHeight: 20,
+  },
+  loadingCommentsContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  commentsList: {
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    flexGrow: 1,
+  },
+  commentItem: {
+    flexDirection: 'row',
+    marginBottom: 15,
+    alignItems: 'flex-start',
+  },
+  commentAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#3498db',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  commentAvatarText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  commentContent: {
+    flex: 1,
+    backgroundColor: 'white',
+    padding: 10,
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  commentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  commentUserName: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+  },
+  deleteCommentButton: {
+    padding: 5,
+  },
+  commentText: {
+    fontSize: 14,
+    color: '#2c3e50',
+    lineHeight: 18,
+  },
+  commentTime: {
+    fontSize: 12,
+    color: '#7f8c8d',
+    marginTop: 5,
+  },
+  emptyCommentsContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  emptyCommentsText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#7f8c8d',
+  },
+  emptyCommentsSubText: {
+    fontSize: 14,
+    color: '#95a5a6',
+    marginTop: 5,
+  },
+  commentInputContainer: {
+    flexDirection: 'row',
+    padding: 15,
+    backgroundColor: 'white',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+  },
+  commentInput: {
+    flex: 1,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 20,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    maxHeight: 100,
+    marginRight: 10,
+  },
+  commentButton: {
+    backgroundColor: '#3498db',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
