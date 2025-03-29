@@ -5,13 +5,18 @@ import { AuthProvider } from '../context/auth';
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <Stack>
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="login" options={{ headerShown: false }} />
-        <Stack.Screen name="register" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="chat/[id]" options={{ title: 'Chat' }} />
-        <Stack.Screen name="add-friend" options={{ title: 'Add Friend' }} />
+      <Stack
+        screenOptions={{
+          headerShown: false, // ปิด header ของ Expo Router ในทุกหน้า
+          contentStyle: { backgroundColor: '#f5f5f5' }
+        }}
+      >
+        <Stack.Screen name="index" />
+        <Stack.Screen name="login" />
+        <Stack.Screen name="register" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="chat/[id]" />
+        <Stack.Screen name="add-friend" />
       </Stack>
     </AuthProvider>
   );

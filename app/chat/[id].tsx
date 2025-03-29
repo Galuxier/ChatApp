@@ -23,15 +23,10 @@ import {
   getDoc,
   setDoc
 } from 'firebase/firestore';
-import { db, auth } from '../firebase';
-import { RouteProp } from '@react-navigation/native';
-import { RootStackParamList } from '../AuthHandler';
-
-type ChatScreenRouteProp = RouteProp<RootStackParamList, 'Chat'>;
-
-interface Props {
-  route: ChatScreenRouteProp;
-}
+import { db } from '../../firebase';
+import { useLocalSearchParams, router } from 'expo-router';
+import { useAuth } from '../../context/auth';
+import { FontAwesome } from '@expo/vector-icons';
 
 interface Message {
   id: string;
@@ -41,21 +36,22 @@ interface Message {
   status: string;
 }
 
-export default function ChatScreen({ route }: Props) {
-  const { userId } = route.params;
+export default function ChatScreen() {
+  const { id: userId } = useLocalSearchParams<{ id: string }>();
+  const { user } = useAuth();
   const [message, setMessage] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [friendName, setFriendName] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const flatListRef = useRef<FlatList>(null);
 
-  const chatId = [auth.currentUser!.uid, userId].sort().join('_');
+  const chatId = user && userId ? [user.uid, userId].sort().join('_') : '';
   
   // Function to ensure chat exists in database
   const ensureChatExists = async () => {
-    if (!auth.currentUser) return;
+    if (!user || !userId) return;
     
-    const currentUserId = auth.currentUser.uid;
+    const currentUserId = user.uid;
     const friendId = userId;
     const chatId = [currentUserId, friendId].sort().join('_');
     
@@ -86,26 +82,29 @@ export default function ChatScreen({ route }: Props) {
   // Get friend's name
   useEffect(() => {
     const fetchFriendData = async () => {
-      if (!auth.currentUser) return;
+      if (!user || !userId) return;
       
       try {
         const userDoc = await getDoc(doc(db, 'users', userId));
         if (userDoc.exists()) {
-          setFriendName(userDoc.data().displayName || 'Chat');
+          const name = userDoc.data().displayName || 'Chat';
+          setFriendName(name);
         }
         // Ensure chat record exists when entering chat screen
         await ensureChatExists();
       } catch (error) {
         console.error('Error fetching friend data:', error);
+      } finally {
+        setLoading(false);
       }
     };
     
     fetchFriendData();
-  }, [userId]);
+  }, [userId, user]);
 
   // Listen for messages
   useEffect(() => {
-    if (!auth.currentUser) return;
+    if (!user || !chatId) return;
     
     const q = query(
       collection(db, 'chats', chatId, 'messages'), 
@@ -126,7 +125,7 @@ export default function ChatScreen({ route }: Props) {
       snapshot.docs.forEach(doc => {
         const messageData = doc.data();
         if (
-          messageData.senderId !== auth.currentUser?.uid && 
+          messageData.senderId !== user?.uid && 
           messageData.status !== 'read'
         ) {
           updateDoc(doc.ref, { status: 'read' });
@@ -141,14 +140,14 @@ export default function ChatScreen({ route }: Props) {
       // Make sure to unsubscribe when component unmounts
       unsubscribe();
     };
-  }, [chatId]);
+  }, [chatId, user]);
 
   const sendMessage = async () => {
-    if (!auth.currentUser || !message.trim()) return;
+    if (!user || !chatId || !message.trim()) return;
     
     const newMessage = {
       text: message,
-      senderId: auth.currentUser.uid,
+      senderId: user.uid,
       timestamp: new Date(),
       status: 'sent'
     };
@@ -197,6 +196,18 @@ export default function ChatScreen({ route }: Props) {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Custom Header */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
+          <FontAwesome name="arrow-left" size={20} color="#3498db" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>{friendName}</Text>
+        <View style={styles.headerRight} />
+      </View>
+      
       <KeyboardAvoidingView 
         style={styles.keyboardAvoid}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -206,7 +217,7 @@ export default function ChatScreen({ route }: Props) {
           ref={flatListRef}
           data={messages}
           renderItem={({ item }) => {
-            const isMine = item.senderId === auth.currentUser!.uid;
+            const isMine = item.senderId === user?.uid;
             
             return (
               <View style={[
@@ -217,7 +228,12 @@ export default function ChatScreen({ route }: Props) {
                   styles.messageBubble,
                   isMine ? styles.myMessage : styles.theirMessage
                 ]}>
-                  <Text style={styles.messageText}>{item.text}</Text>
+                  <Text style={[
+                    styles.messageText,
+                    isMine ? styles.myMessageText : styles.theirMessageText
+                  ]}>
+                    {item.text}
+                  </Text>
                   <View style={styles.messageFooter}>
                     <Text style={styles.timeText}>{formatTime(item.timestamp)}</Text>
                     {isMine && (
@@ -243,9 +259,12 @@ export default function ChatScreen({ route }: Props) {
             multiline
           />
           <TouchableOpacity 
-            style={styles.sendButton}
+            style={[
+              styles.sendButton,
+              !message.trim() && styles.disabledSendButton
+            ]}
             onPress={sendMessage}
-            disabled={message.trim() === ''}
+            disabled={!message.trim()}
           >
             <Text style={styles.sendButtonText}>Send</Text>
           </TouchableOpacity>
@@ -259,6 +278,26 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 15,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  backButton: {
+    width: 40,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+  },
+  headerRight: {
+    width: 40,
   },
   keyboardAvoid: {
     flex: 1,
@@ -300,8 +339,13 @@ const styles = StyleSheet.create({
   },
   messageText: {
     fontSize: 16,
-    color: 'black',
     marginBottom: 5,
+  },
+  myMessageText: {
+    color: 'white',
+  },
+  theirMessageText: {
+    color: 'black',
   },
   messageFooter: {
     flexDirection: 'row',
@@ -340,6 +384,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingHorizontal: 15,  
     paddingVertical: 10,
+  },
+  disabledSendButton: {
+    backgroundColor: '#95c8ea',
   },
   sendButtonText: {
     color: 'white',

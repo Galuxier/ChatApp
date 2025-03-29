@@ -79,9 +79,12 @@ export default function ProfileScreen() {
           onPress: async () => {
             try {
               await signOut(auth);
-              // Navigation will be handled by index.tsx redirect
+              // ใน Expo Router ไม่จำเป็นต้อง navigate โดยตรง เพราะในไฟล์ app/index.tsx
+              // มีการตรวจสอบสถานะการล็อกอินอยู่แล้ว แต่เราสามารถเพิ่มให้เพื่อความแน่ใจ
+              router.replace('/login');
             } catch (error) {
               console.error('Error during logout:', error);
+              Alert.alert('Error', 'Failed to logout. Please try again.');
             }
           },
           style: 'destructive'

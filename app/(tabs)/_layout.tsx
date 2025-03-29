@@ -4,13 +4,16 @@ import { FontAwesome } from '@expo/vector-icons';
 
 export default function TabLayout() {
   return (
-    <Tabs>
+    <Tabs
+      screenOptions={{
+        headerShown: false // ปิด header ของ Tabs
+      }}
+    >
       <Tabs.Screen
         name="chats"
         options={{
           title: 'Chats',
           tabBarIcon: ({ color }) => <FontAwesome name="comments" size={24} color={color} />,
-          headerTitle: 'Chats',
         }}
       />
       <Tabs.Screen
@@ -18,7 +21,6 @@ export default function TabLayout() {
         options={{
           title: 'Profile',
           tabBarIcon: ({ color }) => <FontAwesome name="user" size={24} color={color} />,
-          headerTitle: 'My Profile',
         }}
       />
     </Tabs>
