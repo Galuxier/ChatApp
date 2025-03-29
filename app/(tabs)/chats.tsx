@@ -10,6 +10,7 @@ interface Chat {
   id: string;
   userId: string;
   displayName: string;
+  profileImage: string | null;
   lastMessage: string;
   timestamp: any;
   unreadCount: number;
@@ -85,6 +86,7 @@ export default function ChatsScreen() {
             id: chatId,
             userId: friendId,
             displayName: userData?.displayName || 'Unknown User',
+            profileImage: userData?.profileImage || null,
             lastMessage,
             timestamp,
             unreadCount: 0, // This would need to be implemented with a proper read/unread system
@@ -174,11 +176,15 @@ export default function ChatsScreen() {
               style={styles.chatItem}
               onPress={() => router.push(`/chat/${item.userId}`)}
             >
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>
-                  {item.displayName.charAt(0).toUpperCase()}
-                </Text>
-              </View>
+              {item.profileImage ? (
+                <Image source={{ uri: item.profileImage }} style={styles.avatar} />
+              ) : (
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>
+                    {item.displayName.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              )}
               <View style={styles.chatInfo}>
                 <View style={styles.chatHeader}>
                   <Text style={styles.chatName}>{item.displayName}</Text>

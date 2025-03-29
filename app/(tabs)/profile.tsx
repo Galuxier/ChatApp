@@ -1,18 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { View, TextInput, StyleSheet, Text, TouchableOpacity, Alert, ActivityIndicator, Platform } from 'react-native';
+import {
+  View,
+  TextInput,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+  Image,
+  Platform
+} from 'react-native';
 import { updateProfile, signOut } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { auth, db, storage } from '../../firebase';
 import { useAuth } from '../../context/auth';
 import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
+import * as ImagePicker from 'expo-image-picker';
+import { FontAwesome } from '@expo/vector-icons';
 
 export default function ProfileScreen() {
   const { user } = useAuth();
   const [displayName, setDisplayName] = useState<string>(user?.displayName || '');
   const [pingId, setPingId] = useState<string>('');
+  const [profileImage, setProfileImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [isUploadingImage, setIsUploadingImage] = useState<boolean>(false);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -22,6 +37,7 @@ export default function ProfileScreen() {
           if (userDoc.exists()) {
             const userData = userDoc.data();
             setPingId(userData.pingId || '');
+            setProfileImage(userData.profileImage || null);
           }
         } catch (error) {
           console.error('Error fetching user data:', error);
@@ -33,6 +49,60 @@ export default function ProfileScreen() {
 
     fetchUserData();
   }, [user]);
+
+  const pickImage = async () => {
+    // Request permissions first
+    if (Platform.OS !== 'web') {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'We need camera roll permission to upload your profile picture.');
+        return;
+      }
+    }
+
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      const selectedAsset = result.assets[0];
+      await uploadImage(selectedAsset.uri);
+    }
+  };
+
+  const uploadImage = async (uri: string) => {
+    if (!user) return;
+
+    setIsUploadingImage(true);
+    
+    try {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      
+      const fileRef = ref(storage, `profileImages/${user.uid}`);
+      await uploadBytes(fileRef, blob);
+      
+      const downloadURL = await getDownloadURL(fileRef);
+      
+      // Update profile image URL in Firestore
+      await setDoc(doc(db, 'users', user.uid), { 
+        profileImage: downloadURL 
+      }, { merge: true });
+      
+      // Update local state
+      setProfileImage(downloadURL);
+      
+      Alert.alert('Success', 'Profile picture updated successfully');
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      Alert.alert('Error', 'Failed to upload profile picture. Please try again.');
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
 
   const handleUpdate = async () => {
     if (!user) return;
@@ -79,8 +149,6 @@ export default function ProfileScreen() {
           onPress: async () => {
             try {
               await signOut(auth);
-              // ใน Expo Router ไม่จำเป็นต้อง navigate โดยตรง เพราะในไฟล์ app/index.tsx
-              // มีการตรวจสอบสถานะการล็อกอินอยู่แล้ว แต่เราสามารถเพิ่มให้เพื่อความแน่ใจ
               router.replace('/login');
             } catch (error) {
               console.error('Error during logout:', error);
@@ -104,6 +172,27 @@ export default function ProfileScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Your Profile</Text>
+      
+      <View style={styles.profileImageContainer}>
+        <TouchableOpacity onPress={pickImage} disabled={isUploadingImage}>
+          {isUploadingImage ? (
+            <View style={styles.profileImagePlaceholder}>
+              <ActivityIndicator size="small" color="white" />
+            </View>
+          ) : profileImage ? (
+            <Image source={{ uri: profileImage }} style={styles.profileImage} />
+          ) : (
+            <View style={styles.profileImagePlaceholder}>
+              <Text style={styles.profileImagePlaceholderText}>
+                {displayName.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          )}
+          <View style={styles.editIconContainer}>
+            <FontAwesome name="camera" size={16} color="white" />
+          </View>
+        </TouchableOpacity>
+      </View>
       
       <View style={styles.infoContainer}>
         <View style={styles.infoItem}>
@@ -168,6 +257,42 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 20,
     color: '#2c3e50',
+  },
+  profileImageContainer: {
+    alignItems: 'center',
+    marginBottom: 30,
+  },
+  profileImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#e0e0e0',
+  },
+  profileImagePlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#3498db',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileImagePlaceholderText: {
+    color: 'white',
+    fontSize: 40,
+    fontWeight: 'bold',
+  },
+  editIconContainer: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#3498db',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'white',
   },
   infoContainer: {
     backgroundColor: 'white',
