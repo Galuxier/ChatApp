@@ -15,6 +15,7 @@ import {
   Platform,
 } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { 
   collection, 
   query, 
@@ -26,10 +27,10 @@ import {
   getDoc, 
   updateDoc, 
   where, 
-  deleteDoc, // เพิ่ม deleteDoc
+  deleteDoc,
 } from 'firebase/firestore';
-import { db } from '../../firebase';
-import { useAuth } from '../../context/auth';
+import { db } from '../../../firebase';
+import { useAuth } from '../../../context/auth';
 
 interface Comment {
   id: string;
@@ -61,6 +62,7 @@ interface Post {
 
 export default function HomeScreen() {
   const { user } = useAuth();
+  const router = useRouter();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -277,7 +279,6 @@ export default function HomeScreen() {
     }
   };
 
-  // ฟังก์ชันลบโพสต์
   const handleDeletePost = async (postId: string) => {
     if (!user) return;
 
@@ -291,10 +292,7 @@ export default function HomeScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              // ลบโพสต์จาก Firestore
               await deleteDoc(doc(db, 'posts', postId));
-              
-              // อัปเดต state โดยลบโพสต์ออกจากรายการ
               setPosts(posts.filter(post => post.id !== postId));
             } catch (error) {
               console.error('Error deleting post:', error);
@@ -364,7 +362,7 @@ export default function HomeScreen() {
       const userData = userDoc.exists() ? userDoc.data() : { displayName: 'Unknown User' };
       
       const newCommentObj: Comment = {
-        id: 'temp-id',
+        id: 'temp-id', // ID ชั่วคราว จะดีกว่าถ้าใช้ ID จริงจาก Firestore
         userId: user.uid,
         userName: userData.displayName || 'Unknown User',
         userImage: userData.profileImage || null,
@@ -393,7 +391,6 @@ export default function HomeScreen() {
     }
   };
 
-  // ฟังก์ชันลบคอมเมนต์
   const handleDeleteComment = async (commentId: string) => {
     if (!user || !selectedPost) return;
 
@@ -407,10 +404,8 @@ export default function HomeScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              // ลบคอมเมนต์จาก Firestore
               await deleteDoc(doc(db, 'posts', selectedPost.id, 'comments', commentId));
               
-              // อัปเดต state โดยลบคอมเมนต์ออกจากรายการ
               if (selectedPost.comments) {
                 const updatedComments = selectedPost.comments.filter(comment => comment.id !== commentId);
                 setSelectedPost({
@@ -432,6 +427,16 @@ export default function HomeScreen() {
         },
       ]
     );
+  };
+
+  const goToProfile = (userId: string) => {
+    // ปิด Modal และรีเซ็ต state ก่อนนำทาง
+    if (commentModalVisible) {
+      setCommentModalVisible(false);
+      setSelectedPost(null);
+      setNewComment('');
+    }
+    router.push({ pathname: '/(tabs)/home/profile', params: { userId } });
   };
 
   const formatTime = (date: Date) => {
@@ -526,7 +531,9 @@ export default function HomeScreen() {
                 </View>
               )}
               <View style={styles.postHeaderInfo}>
-                <Text style={styles.postUserName}>{item.userName}</Text>
+                <TouchableOpacity onPress={() => goToProfile(item.userId)}>
+                  <Text style={styles.postUserName}>{item.userName}</Text>
+                </TouchableOpacity>
                 <Text style={styles.postTime}>{formatTime(item.timestamp)}</Text>
               </View>
               {item.userId === user?.uid && (
@@ -604,7 +611,11 @@ export default function HomeScreen() {
         animationType="slide"
         transparent={false}
         visible={commentModalVisible}
-        onRequestClose={() => setCommentModalVisible(false)}
+        onRequestClose={() => {
+          setCommentModalVisible(false);
+          setSelectedPost(null);
+          setNewComment('');
+        }}
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -613,7 +624,11 @@ export default function HomeScreen() {
           <View style={styles.modalHeader}>
             <TouchableOpacity 
               style={styles.closeButton} 
-              onPress={() => setCommentModalVisible(false)}
+              onPress={() => {
+                setCommentModalVisible(false);
+                setSelectedPost(null);
+                setNewComment('');
+              }}
             >
               <FontAwesome name="arrow-left" size={20} color="#3498db" />
             </TouchableOpacity>
@@ -634,7 +649,9 @@ export default function HomeScreen() {
                       </Text>
                     </View>
                   )}
-                  <Text style={styles.previewUserName}>{selectedPost.userName}</Text>
+                  <TouchableOpacity onPress={() => goToProfile(selectedPost.userId)}>
+                    <Text style={styles.previewUserName}>{selectedPost.userName}</Text>
+                  </TouchableOpacity>
                 </View>
                 <Text style={styles.previewText}>{selectedPost.text}</Text>
               </View>
@@ -660,7 +677,9 @@ export default function HomeScreen() {
                       )}
                       <View style={styles.commentContent}>
                         <View style={styles.commentHeader}>
-                          <Text style={styles.commentUserName}>{item.userName}</Text>
+                          <TouchableOpacity onPress={() => goToProfile(item.userId)}>
+                            <Text style={styles.commentUserName}>{item.userName}</Text>
+                          </TouchableOpacity>
                           {item.userId === user?.uid && (
                             <TouchableOpacity
                               style={styles.deleteCommentButton}
