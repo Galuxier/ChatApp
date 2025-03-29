@@ -31,6 +31,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { useAuth } from '../../context/auth';
 import { FontAwesome } from '@expo/vector-icons';
 
+
 interface Message {
   id: string;
   text: string;
