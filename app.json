@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "ChatApp",
-    "slug": "ChatApp",
+    "name": "Ping",
+    "slug": "Ping",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
