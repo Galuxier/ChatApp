@@ -54,7 +54,10 @@ export default function ChatScreen() {
   const [friendName, setFriendName] = useState<string>('');
   const [friendImage, setFriendImage] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isSending, setIsSending] = useState<boolean>(false);
   const flatListRef = useRef<FlatList>(null);
+  const sendButtonScale = useRef(new Animated.Value(1)).current;
+  const sendButtonOpacity = useRef(new Animated.Value(0.8)).current;
 
   const chatId = user && userId ? [user.uid, userId].sort().join('_') : '';
 
@@ -66,6 +69,28 @@ export default function ChatScreen() {
     opacity: new Animated.Value(Math.random() * 0.5 + 0.1),
     duration: Math.random() * 2000 + 1000,
   }));
+
+  // Signal beam animation
+  const signalOpacity = useRef(new Animated.Value(0)).current;
+  const signalPosition = useRef(new Animated.Value(0)).current;
+
+  const animateSignalBeam = () => {
+    signalPosition.setValue(0);
+    signalOpacity.setValue(0.8);
+    
+    Animated.parallel([
+      Animated.timing(signalPosition, {
+        toValue: 1,
+        duration: 1500,
+        useNativeDriver: true,
+      }),
+      Animated.timing(signalOpacity, {
+        toValue: 0,
+        duration: 1500,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
 
   // Function to ensure chat exists in database
   const ensureChatExists = async () => {
@@ -216,6 +241,25 @@ export default function ChatScreen() {
   const sendMessage = async () => {
     if (!user || !chatId || !message.trim()) return;
 
+    setIsSending(true);
+    
+    // Animate send button
+    Animated.sequence([
+      Animated.timing(sendButtonScale, {
+        toValue: 1.2,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(sendButtonScale, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      })
+    ]).start();
+    
+    // Start signal beam animation
+    animateSignalBeam();
+
     const newMessage = {
       text: message,
       senderId: user.uid,
@@ -235,7 +279,40 @@ export default function ChatScreen() {
       });
     } catch (error) {
       console.error('Error sending message:', error);
+    } finally {
+      setIsSending(false);
     }
+  };
+
+  // Handle button press effect
+  const handleSendButtonPressIn = () => {
+    Animated.parallel([
+      Animated.timing(sendButtonScale, {
+        toValue: 0.9,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(sendButtonOpacity, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      })
+    ]).start();
+  };
+
+  const handleSendButtonPressOut = () => {
+    Animated.parallel([
+      Animated.timing(sendButtonScale, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(sendButtonOpacity, {
+        toValue: 0.8,
+        duration: 100,
+        useNativeDriver: true,
+      })
+    ]).start();
   };
 
   // Auto scroll to bottom when new messages arrive
@@ -305,7 +382,15 @@ export default function ChatScreen() {
         >
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#00DDEB" />
-            <Text style={styles.loadingText}>Connecting to Comm System...</Text>
+            <Text style={styles.loadingText}>Establishing Secure Connection...</Text>
+            <View style={styles.loadingSubtext}>
+              <Text style={styles.scanningText}>SCANNING</Text>
+              <View style={styles.loadingDots}>
+                <Text style={styles.loadingDot}>.</Text>
+                <Text style={styles.loadingDot}>.</Text>
+                <Text style={styles.loadingDot}>.</Text>
+              </View>
+            </View>
           </View>
         </LinearGradient>
       </ImageBackground>
@@ -339,10 +424,26 @@ export default function ChatScreen() {
                   <Text style={styles.profileImageText}>{friendName.charAt(0).toUpperCase()}</Text>
                 </LinearGradient>
               )}
-              <Text style={styles.headerTitle}>{friendName}</Text>
-              <Text style={styles.headerStatus}>Online</Text>
+              <View style={styles.headerTextContainer}>
+                <Text style={styles.headerTitle}>{friendName}</Text>
+                <View style={styles.statusContainer}>
+                  <View style={styles.statusDot} />
+                  <Text style={styles.headerStatus}>COMMS ONLINE</Text>
+                </View>
+              </View>
+            </View>
+            
+            <View style={styles.connectionIndicator}>
+              <Text style={styles.signalText}>SIGNAL</Text>
+              <View style={styles.signalBars}>
+                <View style={[styles.signalBar, styles.signalBarActive]} />
+                <View style={[styles.signalBar, styles.signalBarActive]} />
+                <View style={[styles.signalBar, styles.signalBarActive]} />
+              </View>
             </View>
           </View>
+
+          <View style={styles.topGridOverlay} />
 
           <KeyboardAvoidingView
             style={styles.keyboardAvoid}
@@ -399,31 +500,84 @@ export default function ChatScreen() {
               contentContainerStyle={styles.messagesList}
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
-                  <Image source={{ uri: 'https://via.placeholder.com/150' }} style={styles.emptyImage} />
-                  <Text style={styles.emptyTitle}>No transmissions yet</Text>
-                  <Text style={styles.emptyText}>Send a signal to initiate contact</Text>
+                  <View style={styles.emptyIconContainer}>
+                    <FontAwesome name="satellite" size={50} color="#00DDEB" />
+                  </View>
+                  <Text style={styles.emptyTitle}>COMMUNICATION CHANNEL OPEN</Text>
+                  <Text style={styles.emptyText}>Send a transmission to initiate contact</Text>
+                  <View style={styles.gridContainer}>
+                    <View style={styles.gridLine} />
+                    <View style={styles.gridLine} />
+                    <View style={styles.gridLine} />
+                  </View>
                 </View>
               }
             />
 
+            <View style={styles.bottomGridOverlay} />
+
             <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                value={message}
-                onChangeText={setMessage}
-                placeholder="Enter transmission..."
-                placeholderTextColor="#A0B1C2"
-                multiline
+              {/* Signal beam animation */}
+              <Animated.View 
+                style={[
+                  styles.signalBeam,
+                  {
+                    opacity: signalOpacity,
+                    transform: [
+                      {
+                        translateX: signalPosition.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, -300],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
               />
-              <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
-                <LinearGradient
-                  colors={['#00DDEB', '#1E90FF']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.sendButtonGradient}
+              
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  value={message}
+                  onChangeText={setMessage}
+                  placeholder="TYPE TRANSMISSION..."
+                  placeholderTextColor="#638899"
+                  multiline
+                />
+              </View>
+              
+              <TouchableOpacity 
+                onPress={sendMessage}
+                onPressIn={handleSendButtonPressIn}
+                onPressOut={handleSendButtonPressOut}
+                disabled={!message.trim() || isSending}
+                activeOpacity={0.7}
+              >
+                <Animated.View 
+                  style={[
+                    styles.sendButtonContainer,
+                    {
+                      transform: [{ scale: sendButtonScale }],
+                      opacity: !message.trim() ? 0.5 : sendButtonOpacity,
+                    }
+                  ]}
                 >
-                  <FontAwesome name="send" size={18} color="white" />
-                </LinearGradient>
+                  <LinearGradient
+                    colors={['#00DDEB', '#0066BB']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.sendButtonGradient}
+                  >
+                    {isSending ? (
+                      <ActivityIndicator size="small" color="white" />
+                    ) : (
+                      <View style={styles.sendButtonInner}>
+                        <FontAwesome name="rocket" size={18} color="white" />
+                      </View>
+                    )}
+                  </LinearGradient>
+                  <View style={styles.buttonRingEffect} />
+                </Animated.View>
               </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>
@@ -450,7 +604,9 @@ export default function ChatScreen() {
           {/* Radar effect */}
           <View style={styles.radarContainer}>
             <View style={styles.radarCircle} />
-            <View style={[styles.radarCircle, styles.radarPulse]} />
+            <View style={[styles.radarCircle, styles.radarMidCircle]} />
+            <View style={[styles.radarCircle, styles.radarOuterCircle]} />
+            <View style={styles.radarSweep} />
           </View>
         </SafeAreaView>
       </LinearGradient>
@@ -480,17 +636,38 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 10,
     fontFamily: 'monospace',
+    letterSpacing: 1,
+  },
+  loadingSubtext: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  scanningText: {
+    color: '#00DDEB',
+    fontSize: 14,
+    fontFamily: 'monospace',
+    letterSpacing: 2,
+  },
+  loadingDots: {
+    flexDirection: 'row',
+    height: 20,
+    overflow: 'hidden',
+  },
+  loadingDot: {
+    color: '#00DDEB',
+    fontSize: 24,
+    marginLeft: 2,
+    fontFamily: 'monospace',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 15,
     paddingTop: Platform.OS === 'android' ? 35 : 15,
-    backgroundColor: 'rgba(10, 25, 47, 0.9)',
+    backgroundColor: 'rgba(0, 10, 25, 0.9)',
     borderBottomWidth: 2,
     borderBottomColor: '#00DDEB',
-    borderBottomLeftRadius: 10,
-    borderBottomRightRadius: 10,
   },
   backButton: {
     width: 40,
@@ -503,11 +680,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
+  headerTextContainer: {
+    marginLeft: 10,
+  },
   profileImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginRight: 10,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
     borderWidth: 2,
     borderColor: '#00DDEB',
     justifyContent: 'center',
@@ -515,20 +694,77 @@ const styles = StyleSheet.create({
   },
   profileImageText: {
     color: 'white',
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#FFFFFF',
     fontFamily: 'monospace',
   },
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 3,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#00FF7F',
+    marginRight: 5,
+  },
   headerStatus: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#00FF7F',
-    marginLeft: 10,
     fontFamily: 'monospace',
+    letterSpacing: 1,
+  },
+  connectionIndicator: {
+    alignItems: 'center',
+  },
+  signalText: {
+    fontSize: 9,
+    color: '#00DDEB',
+    fontFamily: 'monospace',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  signalBars: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  signalBar: {
+    width: 4,
+    height: 8,
+    marginHorizontal: 1,
+    backgroundColor: 'rgba(0, 221, 235, 0.3)',
+    borderTopLeftRadius: 1,
+    borderTopRightRadius: 1,
+  },
+  signalBarActive: {
+    backgroundColor: '#00DDEB',
+    height: 15,
+  },
+  topGridOverlay: {
+    position: 'absolute',
+    top: Platform.OS === 'android' ? 90 : 70,
+    left: 0,
+    right: 0,
+    height: 50,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: 'rgba(0, 221, 235, 0.1)',
+    backgroundColor: 'transparent',
+    zIndex: 1,
+  },
+  bottomGridOverlay: {
+    height: 50,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: 'rgba(0, 221, 235, 0.1)',
+    marginBottom: -1,
   },
   keyboardAvoid: {
     flex: 1,
@@ -556,14 +792,13 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
     backgroundColor: 'rgba(10, 25, 47, 0.9)',
     borderWidth: 1,
-    borderColor: '#00DDEB',
   },
   myMessage: {
-    backgroundColor: 'rgba(0, 221, 235, 0.2)',
+    backgroundColor: 'rgba(0, 221, 235, 0.15)',
     borderColor: '#00DDEB',
   },
   theirMessage: {
-    backgroundColor: 'rgba(30, 144, 255, 0.2)',
+    backgroundColor: 'rgba(30, 144, 255, 0.15)',
     borderColor: '#1E90FF',
   },
   messageText: {
@@ -622,43 +857,66 @@ const styles = StyleSheet.create({
     marginHorizontal: 10,
     fontWeight: '500',
     fontFamily: 'monospace',
+    letterSpacing: 1,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(10, 25, 47, 0.9)',
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    backgroundColor: 'rgba(0, 10, 25, 0.9)',
     borderTopWidth: 2,
     borderTopColor: '#00DDEB',
+    position: 'relative',
+    overflow: 'hidden',
   },
-  input: {
+  inputWrapper: {
     flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 10,
-    paddingHorizontal: 15,
-    paddingTop: 10,
-    paddingBottom: 10,
-    maxHeight: 100,
-    marginHorizontal: 8,
-    fontSize: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: '#00DDEB',
+    marginRight: 10,
+    paddingHorizontal: 5,
+  },
+  input: {
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    maxHeight: 100,
+    fontSize: 16,
     color: '#FFFFFF',
     fontFamily: 'monospace',
   },
-  sendButton: {
-    width: 40,
-    height: 40,
+  sendButtonContainer: {
+    width: 50,
+    height: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  sendButtonGradient: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  sendButtonInner: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 22.5,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  sendButtonGradient: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
+  buttonRingEffect: {
+    position: 'absolute',
+    width: 55,
+    height: 55,
+    borderRadius: 27.5,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 221, 235, 0.5)',
   },
   emptyContainer: {
     padding: 40,
@@ -666,27 +924,45 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     height: 400,
   },
-  emptyImage: {
+  emptyIconContainer: {
     width: 120,
     height: 120,
-    opacity: 0.5,
-    marginBottom: 20,
-    borderRadius: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderWidth: 2,
     borderColor: '#00DDEB',
+    borderRadius: 60,
+    marginBottom: 20,
+    backgroundColor: 'rgba(0, 221, 235, 0.05)',
   },
   emptyTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 10,
-    color: '#FFFFFF',
+    color: '#00DDEB',
     fontFamily: 'monospace',
+    letterSpacing: 2,
   },
   emptyText: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#A0B1C2',
     textAlign: 'center',
     fontFamily: 'monospace',
+    letterSpacing: 1,
+  },
+  gridContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    opacity: 0.1,
+  },
+  gridLine: {
+    position: 'absolute',
+    width: '100%',
+    height: 1,
+    backgroundColor: '#00DDEB',
   },
   starsContainer: {
     position: 'absolute',
@@ -703,7 +979,7 @@ const styles = StyleSheet.create({
   },
   radarContainer: {
     position: 'absolute',
-    bottom: 80,
+    bottom: 100,
     right: 20,
     width: 60,
     height: 60,
@@ -711,21 +987,46 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   radarCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1,
     borderColor: '#00DDEB',
     opacity: 0.5,
     position: 'absolute',
   },
-  radarPulse: {
+  radarMidCircle: {
+    width: 35,
+    height: 35,
+    borderRadius: 17.5,
+    opacity: 0.3,
+  },
+  radarOuterCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    opacity: 0.2,
+  },
+  radarSweep: {
+    position: 'absolute',
     width: 60,
     height: 60,
     borderRadius: 30,
-    borderWidth: 2,
-    borderColor: '#00DDEB',
-    opacity: 0.3,
-    animation: 'pulse 2s infinite',
+    borderWidth: 1,
+    borderTopColor: '#00DDEB',
+    borderRightColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderLeftColor: 'transparent',
+    opacity: 0.7,
+    transform: [{ rotate: '135deg' }],
   },
-});
+  signalBeam: {
+    position: 'absolute',
+    width: 300,
+    height: 2,
+    backgroundColor: '#00DDEB',
+    top: '50%',
+    right: 50,
+    opacity: 0,
+  },
+})
