@@ -6,7 +6,7 @@ export default function RootLayout() {
     <AuthProvider>
       <Stack
         screenOptions={{
-          headerShown: false, // Hide the header in all screens
+          headerShown: false, 
           contentStyle: { backgroundColor: '#f5f5f5' }
         }}
       >
@@ -16,8 +16,6 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="chat/[id]" />
         <Stack.Screen name="add-friend" />
-        {/* Add post detail screen in the future */}
-        {/* <Stack.Screen name="post/[id]" /> */}
       </Stack>
     </AuthProvider>
   );

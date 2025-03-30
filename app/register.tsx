@@ -134,17 +134,21 @@ export default function RegisterScreen() {
       setError('Ping ID must be at least 4 characters and cannot contain spaces');
       return;
     }
-
+  
     setIsLoading(true);
-
+  
     try {
-      const pingIdCheckResult = await checkPingIdAvailability(pingId);
-      if (!pingIdCheckResult.available) {
+      // ตรวจสอบว่า Ping ID ซ้ำหรือไม่
+      const q = query(collection(db, 'users'), where('pingId', '==', pingId));
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
         setError('This Ping ID is already taken. Please choose another one.');
         setIsLoading(false);
         return;
       }
-
+  
+      // สร้างบัญชีผู้ใช้ใหม่
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       

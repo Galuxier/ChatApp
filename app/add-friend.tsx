@@ -75,23 +75,23 @@ export default function AddFriendScreen() {
     // Start radar sweep animation
     const radarSweepAnimation = Animated.loop(
       Animated.timing(radarAngle, {
-        toValue: 1, // แทนที่จะไปที่ 360 ให้ใช้ 1 แล้ว interpolate
+        toValue: 360,
         duration: 4000,
         easing: Easing.linear,
         useNativeDriver: true,
       })
     );
-  
+    
     // Start scan line rotation
     const scanLineAnimation = Animated.loop(
       Animated.timing(scanLineAngle, {
-        toValue: 1, // ใช้ค่า 1 แล้ว interpolate เป็นองศา
+        toValue: 360,
         duration: 4000,
         easing: Easing.linear,
         useNativeDriver: true,
       })
     );
-  
+    
     // Pulse animation for scan line
     const scanLinePulseAnimation = Animated.loop(
       Animated.sequence([
@@ -107,12 +107,124 @@ export default function AddFriendScreen() {
         })
       ])
     );
-  
+    
     // Start all animations
     radarSweepAnimation.start();
     scanLineAnimation.start();
     scanLinePulseAnimation.start();
-  
+    
+    // Animate radar scaling
+    radarScale.setValue(1);
+    
+    // Animate radar opacity pulsing
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(radarOpacity, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(radarOpacity, {
+          toValue: 0.7,
+          duration: 2000,
+          useNativeDriver: true,
+        })
+      ])
+    ).start();
+
+    // Stars twinkling animation
+    stars.forEach(star => {
+      const twinkle = () => {
+        Animated.sequence([
+          Animated.timing(star.opacity, {
+            toValue: Math.random() * 0.7 + 0.3,
+            duration: star.duration,
+            useNativeDriver: true,
+          }),
+          Animated.timing(star.opacity, {
+            toValue: Math.random() * 0.5 + 0.1,
+            duration: star.duration,
+            useNativeDriver: true,
+          }),
+        ]).start(twinkle);
+      };
+      twinkle();
+    });
+    
+    // Randomly animate ships flying across the screen
+    const animateShip = () => {
+      const yPosition = Math.random() * height / 2;
+      spaceshipPosition.setValue({ x: -100, y: yPosition });
+      
+      Animated.parallel([
+        Animated.timing(spaceshipPosition.x, {
+          toValue: width + 100,
+          duration: 8000 + Math.random() * 4000,
+          useNativeDriver: true,
+        }),
+        Animated.sequence([
+          Animated.timing(spaceshipOpacity, {
+            toValue: 0.7,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+          Animated.delay(6000),
+          Animated.timing(spaceshipOpacity, {
+            toValue: 0,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+        ]),
+      ]).start(() => {
+        setTimeout(animateShip, Math.random() * 10000 + 5000);
+      });
+    };
+    
+    animateShip();
+    
+    // Periodic animation of sound blips
+    const animateSoundBlips = () => {
+      soundBlips.forEach((blip, index) => {
+        setTimeout(() => {
+          Animated.sequence([
+            Animated.parallel([
+              Animated.timing(blip.opacity, {
+                toValue: 1,
+                duration: 200,
+                useNativeDriver: true,
+              }),
+              Animated.timing(blip.scale, {
+                toValue: 1,
+                duration: 200,
+                useNativeDriver: true,
+              }),
+              Animated.timing(blip.position, {
+                toValue: 1,
+                duration: 1000,
+                useNativeDriver: true,
+              }),
+            ]),
+            Animated.parallel([
+              Animated.timing(blip.opacity, {
+                toValue: 0,
+                duration: 800,
+                useNativeDriver: true, 
+              }),
+              Animated.timing(blip.scale, {
+                toValue: 1.5,
+                duration: 800,
+                useNativeDriver: true,
+              }),
+            ]),
+          ]).start();
+        }, index * 400);
+      });
+      
+      setTimeout(animateSoundBlips, 5000);
+    };
+    
+    animateSoundBlips();
+    
     return () => {
       radarSweepAnimation.stop();
       scanLineAnimation.stop();
