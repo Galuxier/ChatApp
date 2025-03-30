@@ -1,7 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { View, FlatList, Text, TouchableOpacity, StyleSheet, Image, ActivityIndicator, TextInput } from 'react-native';
+import { 
+  View, 
+  FlatList, 
+  Text, 
+  TouchableOpacity, 
+  StyleSheet, 
+  Image, 
+  ActivityIndicator, 
+  TextInput,
+  SafeAreaView,
+  StatusBar
+} from 'react-native';
 import { collection, query, where, onSnapshot, getDocs, doc, getDoc, orderBy, limit } from 'firebase/firestore';
-import { db, auth } from '../../firebase';
+import { db } from '../../firebase';
 import { useAuth } from '../../context/auth';
 import { router, useFocusEffect } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
@@ -189,9 +200,6 @@ export default function FriendsScreen() {
 
   useFocusEffect(
     React.useCallback(() => {
-      if (user && chats.length > 0) {
-        // No log here anymore
-      }
       return () => {};
     }, [user, chats])
   );
@@ -215,6 +223,16 @@ export default function FriendsScreen() {
     setSearchQuery('');
   };
 
+  // Function to get initials from name for avatar fallback
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .substring(0, 2);
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -224,31 +242,35 @@ export default function FriendsScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      
+      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Friends</Text>
         <TouchableOpacity 
           style={styles.addButton}
           onPress={() => router.push('/add-friend')}
         >
-          <Text style={styles.addButtonText}>+</Text>
+          <FontAwesome name="user-plus" size={18} color="white" />
         </TouchableOpacity>
       </View>
       
       {/* Search Bar */}
       <View style={styles.searchContainer}>
         <View style={styles.searchBar}>
-          <FontAwesome name="search" size={16} color="#7f8c8d" style={styles.searchIcon} />
+          <FontAwesome name="search" size={16} color="#95a5a6" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search friends"
+            placeholder="Search conversations"
+            placeholderTextColor="#95a5a6"
             value={searchQuery}
             onChangeText={setSearchQuery}
             clearButtonMode="while-editing"
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={clearSearch} style={styles.clearButton}>
-              <FontAwesome name="times-circle" size={16} color="#7f8c8d" />
+              <FontAwesome name="times-circle" size={16} color="#95a5a6" />
             </TouchableOpacity>
           )}
         </View>
@@ -258,22 +280,27 @@ export default function FriendsScreen() {
         <View style={styles.emptyContainer}>
           {searchQuery ? (
             <>
-              <Text style={styles.emptyTitle}>No friends match "{searchQuery}"</Text>
-              <Text style={styles.emptyText}>Try a different search or add new friends</Text>
+              <FontAwesome name="search" size={50} color="#bdc3c7" style={styles.emptyIcon} />
+              <Text style={styles.emptyTitle}>No matches found</Text>
+              <Text style={styles.emptyText}>No friends match "{searchQuery}"</Text>
+              <TouchableOpacity 
+                style={styles.clearSearchButton}
+                onPress={clearSearch}
+              >
+                <Text style={styles.clearSearchButtonText}>Clear Search</Text>
+              </TouchableOpacity>
             </>
           ) : (
             <>
-              <Image 
-                source={{ uri: 'https://via.placeholder.com/150' }} 
-                style={styles.emptyImage} 
-              />
-              <Text style={styles.emptyTitle}>No friends yet</Text>
-              <Text style={styles.emptyText}>Add friends using their Ping ID to start chatting</Text>
+              <FontAwesome name="users" size={60} color="#bdc3c7" style={styles.emptyIcon} />
+              <Text style={styles.emptyTitle}>No conversations yet</Text>
+              <Text style={styles.emptyText}>Add friends to start chatting</Text>
               <TouchableOpacity 
                 style={styles.emptyButton}
                 onPress={() => router.push('/add-friend')}
               >
-                <Text style={styles.emptyButtonText}>Add Friend</Text>
+                <FontAwesome name="user-plus" size={16} color="white" style={styles.buttonIcon} />
+                <Text style={styles.emptyButtonText}>Add New Friend</Text>
               </TouchableOpacity>
             </>
           )}
@@ -282,170 +309,203 @@ export default function FriendsScreen() {
         <FlatList
           data={filteredChats}
           keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContainer}
           renderItem={({ item }) => (
             <TouchableOpacity 
-              style={[
-                styles.chatItem,
-                item.unreadCount > 0 && styles.unreadChatItem
-              ]}
+              style={styles.chatItem}
               onPress={() => router.push(`/chat/${item.userId}`)}
             >
-              {item.profileImage ? (
-                <Image source={{ uri: item.profileImage }} style={styles.avatar} />
-              ) : (
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
-                    {item.displayName.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-              )}
+              <View style={[styles.avatarContainer, item.unreadCount > 0 && styles.activeAvatarContainer]}>
+                {item.profileImage ? (
+                  <Image source={{ uri: item.profileImage }} style={styles.avatar} />
+                ) : (
+                  <View style={[styles.avatarFallback, { backgroundColor: getColorFromName(item.displayName) }]}>
+                    <Text style={styles.avatarText}>
+                      {getInitials(item.displayName)}
+                    </Text>
+                  </View>
+                )}
+                {item.unreadCount > 0 && (
+                  <View style={styles.unreadBadge}>
+                    <Text style={styles.unreadText}>
+                      {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              
               <View style={styles.chatInfo}>
                 <View style={styles.chatHeader}>
-                  <Text style={styles.chatName}>{item.displayName}</Text>
-                  <Text style={styles.chatTime}>{formatTime(item.timestamp)}</Text>
-                </View>
-                <View style={styles.chatFooter}>
                   <Text 
-                    style={styles.chatMessage}
+                    style={[styles.chatName, item.unreadCount > 0 && styles.unreadChatName]}
                     numberOfLines={1}
                   >
-                    {item.lastMessage}
+                    {item.displayName}
                   </Text>
-                  {item.unreadCount > 0 && (
-                    <View style={styles.unreadBadge}>
-                      <Text style={styles.unreadText}>{item.unreadCount}</Text>
-                    </View>
-                  )}
+                  <Text style={[styles.chatTime, item.unreadCount > 0 && styles.unreadChatTime]}>
+                    {formatTime(item.timestamp)}
+                  </Text>
                 </View>
+                <Text 
+                  style={[styles.chatMessage, item.unreadCount > 0 && styles.unreadChatMessage]}
+                  numberOfLines={1}
+                >
+                  {item.lastMessage}
+                </Text>
               </View>
             </TouchableOpacity>
           )}
         />
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
+// Function to generate consistent color based on name
+const getColorFromName = (name: string) => {
+  // List of pleasant colors for avatars
+  const colors = [
+    '#3498db', '#2ecc71', '#9b59b6', '#e67e22', '#1abc9c',
+    '#f1c40f', '#e74c3c', '#34495e', '#16a085', '#27ae60',
+    '#8e44ad', '#d35400', '#2980b9', '#c0392b'
+  ];
+  
+  // Simple hash function for name
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  
+  // Select color based on hash
+  const index = Math.abs(hash) % colors.length;
+  return colors[index];
+};
+
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#fff',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#fff',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 15,
-    backgroundColor: 'white',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: '#f5f5f5',
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 24,
+    fontWeight: '700',
     color: '#2c3e50',
   },
   addButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#3498db',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  addButtonText: {
-    fontSize: 24,
-    color: 'white',
-    fontWeight: 'bold',
-    marginTop: -2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
   },
   searchContainer: {
-    backgroundColor: 'white',
-    paddingHorizontal: 15,
-    paddingBottom: 15,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: '#f5f5f5',
   },
   searchBar: {
-    backgroundColor: '#f0f0f0',
-    borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
+    backgroundColor: '#f6f8fa',
+    borderRadius: 10,
+    paddingHorizontal: 15,
+    height: 45,
   },
   searchIcon: {
     marginRight: 10,
   },
   searchInput: {
     flex: 1,
-    height: 40,
     fontSize: 16,
+    color: '#34495e',
   },
   clearButton: {
     padding: 5,
   },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  emptyImage: {
-    width: 150,
-    height: 150,
-    marginBottom: 20,
-    opacity: 0.7,
-  },
-  emptyTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    color: '#2c3e50',
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#7f8c8d',
-    textAlign: 'center',
-    marginBottom: 30,
-  },
-  emptyButton: {
-    backgroundColor: '#3498db',
-    paddingHorizontal: 30,
-    paddingVertical: 15,
-    borderRadius: 5,
-  },
-  emptyButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 16,
+  listContainer: {
+    paddingTop: 5,
   },
   chatItem: {
     flexDirection: 'row',
-    padding: 15,
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderRadius: 12,
+    marginHorizontal: 10,
+    marginVertical: 5,
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
-  unreadChatItem: {
-    backgroundColor: '#e8f4f8',
+  avatarContainer: {
+    position: 'relative',
+    marginRight: 15,
+  },
+  activeAvatarContainer: {
+    transform: [{ scale: 1.05 }],
   },
   avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#3498db',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#e0e0e0',
+  },
+  avatarFallback: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 15,
   },
   avatarText: {
     color: 'white',
-    fontSize: 24,
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  unreadBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    backgroundColor: '#e74c3c',
+    borderRadius: 12,
+    minWidth: 22,
+    height: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 5,
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  unreadText: {
+    color: 'white',
+    fontSize: 11,
     fontWeight: 'bold',
   },
   chatInfo: {
@@ -456,40 +516,88 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 5,
+    marginBottom: 4,
   },
   chatName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#2c3e50',
+    maxWidth: '80%',
+  },
+  unreadChatName: {
+    fontWeight: '800',
+    color: '#000',
   },
   chatTime: {
     fontSize: 12,
-    color: '#7f8c8d',
+    color: '#95a5a6',
   },
-  chatFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  unreadChatTime: {
+    color: '#3498db',
   },
   chatMessage: {
     fontSize: 14,
     color: '#7f8c8d',
-    flex: 1,
-    marginRight: 10,
+    marginRight: 20,
   },
-  unreadBadge: {
-    backgroundColor: '#e74c3c',
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
+  unreadChatMessage: {
+    color: '#34495e',
+    fontWeight: '500',
+  },
+  emptyContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 5,
+    padding: 20,
+    backgroundColor: '#fff',
   },
-  unreadText: {
+  emptyIcon: {
+    marginBottom: 20,
+  },
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    marginBottom: 10,
+    color: '#2c3e50',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#7f8c8d',
+    textAlign: 'center',
+    marginBottom: 30,
+    maxWidth: '80%',
+  },
+  emptyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#3498db',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  buttonIcon: {
+    marginRight: 8,
+  },
+  emptyButtonText: {
     color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: '600',
+    fontSize: 16,
   },
+  clearSearchButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#3498db',
+  },
+  clearSearchButtonText: {
+    color: '#3498db',
+    fontWeight: '600',
+    fontSize: 16,
+  }
 });
