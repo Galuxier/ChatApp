@@ -15,22 +15,23 @@ import {
   Platform,
 } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { 
-  collection, 
-  query, 
-  orderBy, 
-  limit, 
-  getDocs, 
-  addDoc, 
-  doc, 
-  getDoc, 
-  updateDoc, 
-  where, 
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import {
+  collection,
+  query,
+  orderBy,
+  limit,
+  getDocs,
+  addDoc,
+  doc,
+  getDoc,
+  updateDoc,
+  where,
   deleteDoc,
 } from 'firebase/firestore';
 import { db } from '../../../firebase';
 import { useAuth } from '../../../context/auth';
+import { PostCard } from '../../../components/PostCard';
 
 interface Comment {
   id: string;
@@ -56,13 +57,14 @@ interface Post {
   likes: PostLike[];
   likeCount: number;
   commentCount: number;
-  comments?: Comment[];
   isLikedByMe?: boolean;
+  comments?: Comment[];
 }
 
 export default function HomeScreen() {
   const { user } = useAuth();
   const router = useRouter();
+  const params = useLocalSearchParams();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -78,10 +80,8 @@ export default function HomeScreen() {
   const [submittingComment, setSubmittingComment] = useState(false);
   const [loadingComments, setLoadingComments] = useState(false);
   const [friendIds, setFriendIds] = useState<string[]>([]);
-  
   const commentInputRef = useRef<TextInput>(null);
 
-  // Fetch user data
   useEffect(() => {
     const fetchUserData = async () => {
       if (!user) return;
@@ -102,31 +102,27 @@ export default function HomeScreen() {
 
     fetchUserData();
   }, [user]);
-  
-  // Get list of friend IDs
+
   useEffect(() => {
     const fetchFriendIds = async () => {
       if (!user) return;
-      
+
       try {
         const userChatsQuery = query(
           collection(db, 'userChats'),
           where('userId', '==', user.uid)
         );
-        
         const userChatsSnapshot = await getDocs(userChatsQuery);
         const friendIdsList = userChatsSnapshot.docs.map(doc => doc.data().friendId);
-        
         setFriendIds([...friendIdsList, user.uid]);
       } catch (error) {
         console.error('Error fetching friend IDs:', error);
       }
     };
-    
+
     fetchFriendIds();
   }, [user]);
 
-  // Fetch posts from friends
   const fetchPosts = async () => {
     if (!user || friendIds.length === 0) {
       setLoading(false);
@@ -136,32 +132,27 @@ export default function HomeScreen() {
 
     try {
       setLoading(true);
-      
       const postsQuery = query(
         collection(db, 'posts'),
         where('userId', 'in', friendIds),
         orderBy('timestamp', 'desc'),
         limit(20)
       );
-      
       const postsSnapshot = await getDocs(postsQuery);
       const postsData: Post[] = [];
-      
+
       for (const postDoc of postsSnapshot.docs) {
         const postData = postDoc.data();
-        
         const userDoc = await getDoc(doc(db, 'users', postData.userId));
         const userData = userDoc.exists() ? userDoc.data() : { displayName: 'Unknown User' };
-        
         const commentsQuery = query(
           collection(db, 'posts', postDoc.id, 'comments'),
           orderBy('timestamp', 'desc')
         );
         const commentsSnapshot = await getDocs(commentsQuery);
-        
         const likesArray = postData.likes || [];
         const isLikedByMe = likesArray.some((like: any) => like.userId === user.uid);
-        
+
         postsData.push({
           id: postDoc.id,
           userId: postData.userId,
@@ -171,15 +162,15 @@ export default function HomeScreen() {
           timestamp: postData.timestamp?.toDate() || new Date(),
           likes: postData.likes || [],
           likeCount: postData.likes?.length || 0,
-          commentCount: commentsSnapshot.size,
+          commentCount: commentsSnapshot.size, // ใช้ size จาก Firestore เพื่อความแม่นยำ
           isLikedByMe,
         });
       }
-      
+
       setPosts(postsData);
     } catch (error) {
       console.error('Error fetching posts:', error);
-      Alert.alert('Error', 'Could not load posts. Please try again later.');
+      Alert.alert('Error', 'Could not load posts.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -187,10 +178,20 @@ export default function HomeScreen() {
   };
 
   useEffect(() => {
-    if (friendIds.length > 0) {
-      fetchPosts();
-    }
+    if (friendIds.length > 0) fetchPosts();
   }, [friendIds]);
+
+  useEffect(() => {
+    const openCommentsParam = params.openComments;
+    const postId = params.postId;
+
+    if (openCommentsParam === 'true' && postId && posts.length > 0) {
+      const post = posts.find(p => p.id === postId as string);
+      if (post) {
+        openCommentModal(post);
+      }
+    }
+  }, [posts, params]);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -201,7 +202,6 @@ export default function HomeScreen() {
     if (!user || !newPostText.trim() || !userData) return;
 
     setPosting(true);
-    
     try {
       await addDoc(collection(db, 'posts'), {
         userId: user.uid,
@@ -211,12 +211,11 @@ export default function HomeScreen() {
         likeCount: 0,
         createdAt: new Date(),
       });
-      
       setNewPostText('');
       fetchPosts();
     } catch (error) {
       console.error('Error creating post:', error);
-      Alert.alert('Error', 'Could not create post. Please try again.');
+      Alert.alert('Error', 'Could not create post.');
     } finally {
       setPosting(false);
     }
@@ -224,53 +223,29 @@ export default function HomeScreen() {
 
   const handleLikePost = async (postId: string) => {
     if (!user) return;
-    
+
     try {
       const postRef = doc(db, 'posts', postId);
       const postDoc = await getDoc(postRef);
-      
-      if (!postDoc.exists()) {
-        console.error('Post not found');
-        return;
-      }
-      
+      if (!postDoc.exists()) return;
+
       const postData = postDoc.data();
       const likes = postData.likes || [];
       const isLiked = likes.some((like: any) => like.userId === user.uid);
-      
+
       if (isLiked) {
-        await updateDoc(postRef, {
-          likes: likes.filter((like: any) => like.userId !== user.uid),
-        });
-        
-        setPosts(posts.map(post => 
-          post.id === postId 
-            ? { 
-                ...post, 
-                likes: post.likes.filter(like => like.userId !== user.uid),
-                likeCount: post.likeCount - 1,
-                isLikedByMe: false 
-              } 
+        await updateDoc(postRef, { likes: likes.filter((like: any) => like.userId !== user.uid) });
+        setPosts(posts.map(post =>
+          post.id === postId
+            ? { ...post, likes: post.likes.filter(like => like.userId !== user.uid), likeCount: post.likeCount - 1, isLikedByMe: false }
             : post
         ));
       } else {
-        const newLike = {
-          userId: user.uid,
-          timestamp: new Date(),
-        };
-        
-        await updateDoc(postRef, {
-          likes: [...likes, newLike],
-        });
-        
-        setPosts(posts.map(post => 
-          post.id === postId 
-            ? { 
-                ...post, 
-                likes: [...post.likes, newLike],
-                likeCount: post.likeCount + 1,
-                isLikedByMe: true 
-              } 
+        const newLike = { userId: user.uid, timestamp: new Date() };
+        await updateDoc(postRef, { likes: [...likes, newLike] });
+        setPosts(posts.map(post =>
+          post.id === postId
+            ? { ...post, likes: [...post.likes, newLike], likeCount: post.likeCount + 1, isLikedByMe: true }
             : post
         ));
       }
@@ -282,48 +257,42 @@ export default function HomeScreen() {
   const handleDeletePost = async (postId: string) => {
     if (!user) return;
 
-    Alert.alert(
-      'Delete Post',
-      'Are you sure you want to delete this post?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteDoc(doc(db, 'posts', postId));
-              setPosts(posts.filter(post => post.id !== postId));
-            } catch (error) {
-              console.error('Error deleting post:', error);
-              Alert.alert('Error', 'Could not delete post. Please try again.');
-            }
-          },
+    Alert.alert('Delete Post', 'Are you sure you want to delete this post?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteDoc(doc(db, 'posts', postId));
+            setPosts(posts.filter(post => post.id !== postId));
+          } catch (error) {
+            console.error('Error deleting post:', error);
+            Alert.alert('Error', 'Could not delete post.');
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const openCommentModal = async (post: Post) => {
     setSelectedPost(post);
     setCommentModalVisible(true);
     setLoadingComments(true);
-    
+
     try {
       const commentsQuery = query(
         collection(db, 'posts', post.id, 'comments'),
         orderBy('timestamp', 'desc')
       );
-      
       const commentsSnapshot = await getDocs(commentsQuery);
       const commentsData: Comment[] = [];
-      
+
       for (const commentDoc of commentsSnapshot.docs) {
         const commentData = commentDoc.data();
-        
         const userDoc = await getDoc(doc(db, 'users', commentData.userId));
         const userData = userDoc.exists() ? userDoc.data() : { displayName: 'Unknown User' };
-        
+
         commentsData.push({
           id: commentDoc.id,
           userId: commentData.userId,
@@ -333,127 +302,71 @@ export default function HomeScreen() {
           timestamp: commentData.timestamp?.toDate() || new Date(),
         });
       }
-      
-      setSelectedPost({ ...post, comments: commentsData });
+
+      setSelectedPost({ ...post, comments: commentsData, commentCount: commentsSnapshot.size });
+      setPosts(posts.map(p => 
+        p.id === post.id ? { ...p, commentCount: commentsSnapshot.size } : p
+      ));
     } catch (error) {
       console.error('Error fetching comments:', error);
     } finally {
       setLoadingComments(false);
     }
   };
-  
+
   const addComment = async () => {
     if (!user || !selectedPost || !newComment.trim()) return;
-    
+
     setSubmittingComment(true);
-    
     try {
       const newCommentData = {
         userId: user.uid,
         text: newComment.trim(),
         timestamp: new Date(),
       };
-      
-      await addDoc(collection(db, 'posts', selectedPost.id, 'comments'), newCommentData);
-      
-      setNewComment('');
-      
+
+      const commentRef = await addDoc(collection(db, 'posts', selectedPost.id, 'comments'), newCommentData);
+
       const userDoc = await getDoc(doc(db, 'users', user.uid));
       const userData = userDoc.exists() ? userDoc.data() : { displayName: 'Unknown User' };
-      
+
       const newCommentObj: Comment = {
-        id: 'temp-id', // ID ชั่วคราว จะดีกว่าถ้าใช้ ID จริงจาก Firestore
+        id: commentRef.id, // ใช้ ID จริงจาก Firestore
         userId: user.uid,
         userName: userData.displayName || 'Unknown User',
         userImage: userData.profileImage || null,
         text: newCommentData.text,
         timestamp: newCommentData.timestamp,
       };
-      
-      if (selectedPost.comments) {
-        setSelectedPost({
-          ...selectedPost,
-          comments: [newCommentObj, ...selectedPost.comments],
-          commentCount: selectedPost.commentCount + 1,
-        });
-      }
-      
-      setPosts(posts.map(post => 
-        post.id === selectedPost.id 
-          ? { ...post, commentCount: post.commentCount + 1 } 
+
+      setSelectedPost({
+        ...selectedPost,
+        comments: selectedPost.comments ? [newCommentObj, ...selectedPost.comments] : [newCommentObj],
+        commentCount: selectedPost.commentCount + 1,
+      });
+
+      setPosts(posts.map(post =>
+        post.id === selectedPost.id
+          ? { ...post, commentCount: post.commentCount + 1 }
           : post
       ));
+
+      setNewComment('');
     } catch (error) {
       console.error('Error adding comment:', error);
-      Alert.alert('Error', 'Could not add comment. Please try again.');
+      Alert.alert('Error', 'Could not add comment.');
     } finally {
       setSubmittingComment(false);
     }
   };
 
-  const handleDeleteComment = async (commentId: string) => {
-    if (!user || !selectedPost) return;
-
-    Alert.alert(
-      'Delete Comment',
-      'Are you sure you want to delete this comment?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteDoc(doc(db, 'posts', selectedPost.id, 'comments', commentId));
-              
-              if (selectedPost.comments) {
-                const updatedComments = selectedPost.comments.filter(comment => comment.id !== commentId);
-                setSelectedPost({
-                  ...selectedPost,
-                  comments: updatedComments,
-                  commentCount: selectedPost.commentCount - 1,
-                });
-                setPosts(posts.map(post => 
-                  post.id === selectedPost.id 
-                    ? { ...post, commentCount: post.commentCount - 1 } 
-                    : post
-                ));
-              }
-            } catch (error) {
-              console.error('Error deleting comment:', error);
-              Alert.alert('Error', 'Could not delete comment. Please try again.');
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const goToProfile = (userId: string) => {
-    // ปิด Modal และรีเซ็ต state ก่อนนำทาง
+  const handleUserPress = (userId: string) => {
     if (commentModalVisible) {
       setCommentModalVisible(false);
       setSelectedPost(null);
       setNewComment('');
     }
     router.push({ pathname: '/(tabs)/home/profile', params: { userId } });
-  };
-
-  const formatTime = (date: Date) => {
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMin = Math.round(diffMs / 60000);
-    
-    if (diffMin < 1) return 'Just now';
-    if (diffMin < 60) return `${diffMin}m ago`;
-    
-    const diffHours = Math.round(diffMin / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    
-    const diffDays = Math.round(diffHours / 24);
-    if (diffDays < 7) return `${diffDays}d ago`;
-    
-    return date.toLocaleDateString();
   };
 
   if (loading && !refreshing) {
@@ -469,16 +382,12 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Home</Text>
       </View>
-      
+
       <FlatList
         data={posts}
         keyExtractor={(item) => item.id}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            colors={['#3498db']}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={['#3498db']} />
         }
         ListHeaderComponent={
           <View style={styles.createPostContainer}>
@@ -501,12 +410,8 @@ export default function HomeScreen() {
                 editable={!posting}
               />
             </View>
-            
             <TouchableOpacity
-              style={[
-                styles.postButton,
-                (!newPostText.trim() || posting) && styles.disabledButton,
-              ]}
+              style={[styles.postButton, (!newPostText.trim() || posting) && styles.disabledButton]}
               onPress={createPost}
               disabled={!newPostText.trim() || posting}
             >
@@ -519,77 +424,14 @@ export default function HomeScreen() {
           </View>
         }
         renderItem={({ item }) => (
-          <View style={styles.postCard}>
-            <View style={styles.postHeader}>
-              {item.userImage ? (
-                <Image source={{ uri: item.userImage }} style={styles.postAvatar} />
-              ) : (
-                <View style={styles.postAvatar}>
-                  <Text style={styles.avatarText}>
-                    {item.userName.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-              )}
-              <View style={styles.postHeaderInfo}>
-                <TouchableOpacity onPress={() => goToProfile(item.userId)}>
-                  <Text style={styles.postUserName}>{item.userName}</Text>
-                </TouchableOpacity>
-                <Text style={styles.postTime}>{formatTime(item.timestamp)}</Text>
-              </View>
-              {item.userId === user?.uid && (
-                <TouchableOpacity
-                  style={styles.deletePostButton}
-                  onPress={() => handleDeletePost(item.id)}
-                >
-                  <FontAwesome name="trash" size={18} color="#e74c3c" />
-                </TouchableOpacity>
-              )}
-            </View>
-            
-            <Text style={styles.postText}>{item.text}</Text>
-            
-            <View style={styles.postStats}>
-              {item.likeCount > 0 && (
-                <Text style={styles.statText}>
-                  <FontAwesome name="thumbs-up" size={12} color="#3498db" /> {item.likeCount}
-                </Text>
-              )}
-              {item.commentCount > 0 && (
-                <Text style={styles.statText}>
-                  {item.commentCount} {item.commentCount === 1 ? 'comment' : 'comments'}
-                </Text>
-              )}
-            </View>
-            
-            <View style={styles.postActions}>
-              <TouchableOpacity 
-                style={styles.actionButton}
-                onPress={() => handleLikePost(item.id)}
-              >
-                <FontAwesome 
-                  name={item.isLikedByMe ? "thumbs-up" : "thumbs-o-up"} 
-                  size={18} 
-                  color={item.isLikedByMe ? "#3498db" : "#7f8c8d"} 
-                />
-                <Text 
-                  style={[
-                    styles.actionButtonText, 
-                    item.isLikedByMe && styles.activeActionText,
-                  ]}
-                >
-                  Like
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.actionButton}
-                onPress={() => openCommentModal(item)}
-              >
-                <FontAwesome name="comment-o" size={18} color="#7f8c8d" />
-                <Text style={styles.actionButtonText}>Comment</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          <PostCard
+            post={item}
+            onLike={handleLikePost}
+            onComment={openCommentModal}
+            onDelete={item.userId === user?.uid ? handleDeletePost : undefined}
+            onUserPress={handleUserPress}
+            isOwnPost={item.userId === user?.uid}
+          />
         )}
         ListEmptyComponent={
           friendIds.length > 0 ? (
@@ -605,8 +447,7 @@ export default function HomeScreen() {
           )
         }
       />
-      
-      {/* Comments Modal */}
+
       <Modal
         animationType="slide"
         transparent={false}
@@ -618,12 +459,11 @@ export default function HomeScreen() {
         }}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalContainer}
         >
           <View style={styles.modalHeader}>
-            <TouchableOpacity 
-              style={styles.closeButton} 
+            <TouchableOpacity
               onPress={() => {
                 setCommentModalVisible(false);
                 setSelectedPost(null);
@@ -635,30 +475,19 @@ export default function HomeScreen() {
             <Text style={styles.modalTitle}>Comments</Text>
             <View style={styles.headerSpacer} />
           </View>
-          
+
           {selectedPost && (
             <>
               <View style={styles.modalPostPreview}>
-                <View style={styles.previewHeader}>
-                  {selectedPost.userImage ? (
-                    <Image source={{ uri: selectedPost.userImage }} style={styles.previewAvatar} />
-                  ) : (
-                    <View style={styles.previewAvatar}>
-                      <Text style={styles.avatarText}>
-                        {selectedPost.userName.charAt(0).toUpperCase()}
-                      </Text>
-                    </View>
-                  )}
-                  <TouchableOpacity onPress={() => goToProfile(selectedPost.userId)}>
-                    <Text style={styles.previewUserName}>{selectedPost.userName}</Text>
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity onPress={() => handleUserPress(selectedPost.userId)}>
+                  <Text style={styles.previewUserName}>{selectedPost.userName}</Text>
+                </TouchableOpacity>
                 <Text style={styles.previewText}>{selectedPost.text}</Text>
               </View>
-              
+
               {loadingComments ? (
                 <View style={styles.loadingCommentsContainer}>
-                  <ActivityIndicator size="small" color="#3498db" />
+                  <ActivityIndicator size="large" color="#3498db" />
                 </View>
               ) : (
                 <FlatList
@@ -666,73 +495,47 @@ export default function HomeScreen() {
                   keyExtractor={(item) => item.id}
                   renderItem={({ item }) => (
                     <View style={styles.commentItem}>
-                      {item.userImage ? (
-                        <Image source={{ uri: item.userImage }} style={styles.commentAvatar} />
-                      ) : (
-                        <View style={styles.commentAvatar}>
-                          <Text style={styles.commentAvatarText}>
-                            {item.userName.charAt(0).toUpperCase()}
-                          </Text>
-                        </View>
-                      )}
-                      <View style={styles.commentContent}>
-                        <View style={styles.commentHeader}>
-                          <TouchableOpacity onPress={() => goToProfile(item.userId)}>
-                            <Text style={styles.commentUserName}>{item.userName}</Text>
-                          </TouchableOpacity>
-                          {item.userId === user?.uid && (
-                            <TouchableOpacity
-                              style={styles.deleteCommentButton}
-                              onPress={() => handleDeleteComment(item.id)}
-                            >
-                              <FontAwesome name="trash" size={16} color="#e74c3c" />
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                        <Text style={styles.commentText}>{item.text}</Text>
-                        <Text style={styles.commentTime}>{formatTime(item.timestamp)}</Text>
-                      </View>
+                      <TouchableOpacity onPress={() => handleUserPress(item.userId)}>
+                        <Text style={styles.commentUserName}>{item.userName}</Text>
+                      </TouchableOpacity>
+                      <Text style={styles.commentText}>{item.text}</Text>
                     </View>
                   )}
                   ListEmptyComponent={
                     <View style={styles.emptyCommentsContainer}>
                       <Text style={styles.emptyCommentsText}>No comments yet.</Text>
-                      <Text style={styles.emptyCommentsSubText}>Be the first to comment!</Text>
                     </View>
                   }
-                  contentContainerStyle={styles.commentsList}
                 />
               )}
+
+              <View style={styles.commentInputContainer}>
+                <TextInput
+                  ref={commentInputRef}
+                  style={styles.commentInput}
+                  placeholder="Write a comment..."
+                  value={newComment}
+                  onChangeText={setNewComment}
+                  multiline
+                  editable={!submittingComment}
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.commentButton,
+                    (!newComment.trim() || submittingComment) && styles.disabledButton,
+                  ]}
+                  onPress={addComment}
+                  disabled={!newComment.trim() || submittingComment}
+                >
+                  {submittingComment ? (
+                    <ActivityIndicator size="small" color="white" />
+                  ) : (
+                    <FontAwesome name="send" size={18} color="white" />
+                  )}
+                </TouchableOpacity>
+              </View>
             </>
           )}
-          
-          <View style={styles.commentInputContainer}>
-            <TextInput
-              ref={commentInputRef}
-              style={styles.commentInput}
-              placeholder="Write a comment..."
-              value={newComment}
-              onChangeText={setNewComment}
-              multiline
-              maxLength={500}
-              editable={!submittingComment}
-              autoFocus={true}
-            />
-            <TouchableOpacity
-              style={[
-                styles.commentButton,
-                (!newComment.trim() || submittingComment) && styles.disabledButton,
-              ]}
-              onPress={addComment}
-              disabled={!newComment.trim() || submittingComment}
-            >
-              {submittingComment ? (
-                <ActivityIndicator size="small" color="white" />
-              ) : (
-                <FontAwesome name="send" size={18} color="white" />
-              )}
-            </TouchableOpacity>
-          </View>
         </KeyboardAvoidingView>
       </Modal>
     </View>
@@ -809,78 +612,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
   },
-  postCard: {
-    backgroundColor: 'white',
-    padding: 15,
-    marginBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  postHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  postAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#3498db',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  postHeaderInfo: {
-    flex: 1,
-  },
-  postUserName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-  },
-  postTime: {
-    fontSize: 12,
-    color: '#7f8c8d',
-  },
-  deletePostButton: {
-    padding: 5,
-  },
-  postText: {
-    fontSize: 16,
-    color: '#2c3e50',
-    marginBottom: 15,
-    lineHeight: 22,
-  },
-  postStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-    paddingBottom: 10,
-    marginBottom: 10,
-  },
-  statText: {
-    fontSize: 12,
-    color: '#7f8c8d',
-  },
-  postActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 5,
-    paddingHorizontal: 20,
-  },
-  actionButtonText: {
-    marginLeft: 5,
-    color: '#7f8c8d',
-    fontSize: 14,
-  },
-  activeActionText: {
-    color: '#3498db',
-  },
   emptyContainer: {
     padding: 40,
     alignItems: 'center',
@@ -913,14 +644,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
   },
-  closeButton: {
-    padding: 5,
-  },
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#2c3e50',
-    textAlign: 'center',
   },
   headerSpacer: {
     width: 30,
@@ -931,92 +658,35 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
   },
-  previewHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  previewAvatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#3498db',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
   previewUserName: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#2c3e50',
   },
   previewText: {
-    fontSize: 14,
+    fontSize: 16,
     color: '#2c3e50',
-    lineHeight: 20,
+    marginTop: 5,
   },
   loadingCommentsContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  commentsList: {
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    flexGrow: 1,
-  },
   commentItem: {
-    flexDirection: 'row',
-    marginBottom: 15,
-    alignItems: 'flex-start',
-  },
-  commentAvatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#3498db',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  commentAvatarText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  commentContent: {
-    flex: 1,
-    backgroundColor: 'white',
     padding: 10,
-    borderRadius: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  commentHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 2,
+    backgroundColor: 'white',
+    marginVertical: 5,
+    borderRadius: 5,
   },
   commentUserName: {
     fontSize: 14,
     fontWeight: 'bold',
     color: '#2c3e50',
   },
-  deleteCommentButton: {
-    padding: 5,
-  },
   commentText: {
     fontSize: 14,
     color: '#2c3e50',
-    lineHeight: 18,
-  },
-  commentTime: {
-    fontSize: 12,
-    color: '#7f8c8d',
     marginTop: 5,
   },
   emptyCommentsContainer: {
@@ -1029,11 +699,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#7f8c8d',
-  },
-  emptyCommentsSubText: {
-    fontSize: 14,
-    color: '#95a5a6',
-    marginTop: 5,
   },
   commentInputContainer: {
     flexDirection: 'row',
@@ -1049,7 +714,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     paddingVertical: 10,
     maxHeight: 100,
-    marginRight: 10,
   },
   commentButton: {
     backgroundColor: '#3498db',

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, FlatList, Text, TouchableOpacity, StyleSheet, Image, ActivityIndicator } from 'react-native';
+import { View, FlatList, Text, TouchableOpacity, StyleSheet, Image, ActivityIndicator, TextInput } from 'react-native';
 import { collection, query, where, onSnapshot, getDocs, doc, getDoc, orderBy, limit } from 'firebase/firestore';
 import { db, auth } from '../../firebase';
 import { useAuth } from '../../context/auth';
@@ -16,9 +16,11 @@ interface Chat {
   unreadCount: number;
 }
 
-export default function ChatsScreen() {
+export default function FriendsScreen() {
   const [chats, setChats] = useState<Chat[]>([]);
+  const [filteredChats, setFilteredChats] = useState<Chat[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const { user } = useAuth();
 
   useEffect(() => {
@@ -28,6 +30,7 @@ export default function ChatsScreen() {
     const fetchChats = async () => {
       if (!user) {
         setChats([]);
+        setFilteredChats([]);
         setLoading(false);
         return;
       }
@@ -42,6 +45,7 @@ export default function ChatsScreen() {
         chatListenerUnsubscribe = onSnapshot(chatIdsQuery, async (chatIdsSnapshot) => {
           if (chatIdsSnapshot.empty) {
             setChats([]);
+            setFilteredChats([]);
             setLoading(false);
             return;
           }
@@ -104,6 +108,7 @@ export default function ChatsScreen() {
             const resolvedChats = await Promise.all(chatPromises);
             const sortedChats = resolvedChats.sort((a, b) => b.timestamp - a.timestamp);
             setChats(sortedChats);
+            setFilteredChats(sortedChats);
             
             sortedChats.forEach(chat => {
               const messagesListener = onSnapshot(
@@ -121,16 +126,23 @@ export default function ChatsScreen() {
                     return data.senderId !== user.uid && data.status !== 'read';
                   }).length;
                   
-                  setChats(prevChats => [...prevChats.map(prevChat => 
-                    prevChat.id === chat.id 
-                      ? {
-                          ...prevChat,
-                          lastMessage: lastMessageData.text || 'No message',
-                          timestamp: lastMessageData.timestamp?.toDate() || new Date(),
-                          unreadCount
-                        } 
-                      : prevChat
-                  ).sort((a, b) => b.timestamp - a.timestamp)]);
+                  setChats(prevChats => {
+                    const updatedChats = [...prevChats.map(prevChat => 
+                      prevChat.id === chat.id 
+                        ? {
+                            ...prevChat,
+                            lastMessage: lastMessageData.text || 'No message',
+                            timestamp: lastMessageData.timestamp?.toDate() || new Date(),
+                            unreadCount
+                          } 
+                        : prevChat
+                    ).sort((a, b) => b.timestamp - a.timestamp)];
+                    
+                    // Also update filtered chats with search query
+                    setFilteredChats(filterChatsByName(updatedChats, searchQuery));
+                    
+                    return updatedChats;
+                  });
                 },
                 error => {
                   console.error(`Error in messages listener for chat ${chat.id}:`, error);
@@ -160,6 +172,20 @@ export default function ChatsScreen() {
       messageListenersUnsubscribe.forEach(unsub => unsub());
     };
   }, [user]);
+  
+  // Handle search input changes
+  useEffect(() => {
+    setFilteredChats(filterChatsByName(chats, searchQuery));
+  }, [searchQuery]);
+  
+  // Function to filter chats by display name
+  const filterChatsByName = (chatsList: Chat[], query: string) => {
+    if (!query.trim()) return chatsList;
+    
+    return chatsList.filter(chat => 
+      chat.displayName.toLowerCase().includes(query.toLowerCase())
+    );
+  };
 
   useFocusEffect(
     React.useCallback(() => {
@@ -185,6 +211,10 @@ export default function ChatsScreen() {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
+  const clearSearch = () => {
+    setSearchQuery('');
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -196,7 +226,7 @@ export default function ChatsScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Chats</Text>
+        <Text style={styles.headerTitle}>Friends</Text>
         <TouchableOpacity 
           style={styles.addButton}
           onPress={() => router.push('/add-friend')}
@@ -204,25 +234,53 @@ export default function ChatsScreen() {
           <Text style={styles.addButtonText}>+</Text>
         </TouchableOpacity>
       </View>
-
-      {chats.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Image 
-            source={{ uri: 'https://via.placeholder.com/150' }} 
-            style={styles.emptyImage} 
+      
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchBar}>
+          <FontAwesome name="search" size={16} color="#7f8c8d" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search friends"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            clearButtonMode="while-editing"
           />
-          <Text style={styles.emptyTitle}>No chats yet</Text>
-          <Text style={styles.emptyText}>Add friends using their Ping ID to start chatting</Text>
-          <TouchableOpacity 
-            style={styles.emptyButton}
-            onPress={() => router.push('/add-friend')}
-          >
-            <Text style={styles.emptyButtonText}>Add Friend</Text>
-          </TouchableOpacity>
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={clearSearch} style={styles.clearButton}>
+              <FontAwesome name="times-circle" size={16} color="#7f8c8d" />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {filteredChats.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          {searchQuery ? (
+            <>
+              <Text style={styles.emptyTitle}>No friends match "{searchQuery}"</Text>
+              <Text style={styles.emptyText}>Try a different search or add new friends</Text>
+            </>
+          ) : (
+            <>
+              <Image 
+                source={{ uri: 'https://via.placeholder.com/150' }} 
+                style={styles.emptyImage} 
+              />
+              <Text style={styles.emptyTitle}>No friends yet</Text>
+              <Text style={styles.emptyText}>Add friends using their Ping ID to start chatting</Text>
+              <TouchableOpacity 
+                style={styles.emptyButton}
+                onPress={() => router.push('/add-friend')}
+              >
+                <Text style={styles.emptyButtonText}>Add Friend</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       ) : (
         <FlatList
-          data={chats}
+          data={filteredChats}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <TouchableOpacity 
@@ -306,6 +364,31 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginTop: -2,
   },
+  searchContainer: {
+    backgroundColor: 'white',
+    paddingHorizontal: 15,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  searchBar: {
+    backgroundColor: '#f0f0f0',
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+  },
+  searchIcon: {
+    marginRight: 10,
+  },
+  searchInput: {
+    flex: 1,
+    height: 40,
+    fontSize: 16,
+  },
+  clearButton: {
+    padding: 5,
+  },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -349,7 +432,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e0e0e0',
   },
   unreadChatItem: {
-    backgroundColor: '#ffcccc', // หรือเปลี่ยนเป็น '#e8f4f8' ตามที่คุณต้องการ
+    backgroundColor: '#e8f4f8',
   },
   avatar: {
     width: 50,

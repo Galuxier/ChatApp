@@ -5,8 +5,8 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerShown: false, // Hide the header of Tabs
-        tabBarActiveTintColor: '#3498db',
+        headerShown: false, // Hide the header in all screens
+        contentStyle: { backgroundColor: '#f5f5f5' }
       }}
     >
       <Tabs.Screen
@@ -19,8 +19,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="chats"
         options={{
-          title: 'Chats',
-          tabBarIcon: ({ color }) => <FontAwesome name="comments" size={24} color={color} />,
+          title: 'Friends',
+          tabBarIcon: ({ color }) => <FontAwesome name="users" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
