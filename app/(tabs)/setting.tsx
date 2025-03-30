@@ -20,7 +20,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { updateProfile, signOut } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, uploadBytesResumable } from 'firebase/storage';
 import { auth, db, storage } from '../../firebase';
 import { useAuth } from '../../context/auth';
 import { router } from 'expo-router';
@@ -106,52 +106,79 @@ export default function ProfileScreen() {
   }, [user]);
 
   const pickImage = async () => {
-    if (Platform.OS !== 'web') {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Access to media library is required to upload your profile image.');
-        return;
+    try {
+      // Request permissions first
+      if (Platform.OS !== 'web') {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Denied', 'Access to media library is required to upload your profile image.');
+          return;
+        }
       }
-    }
-  
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.5,
-    });
-  
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      const selectedAsset = result.assets[0];
-      await uploadImage(selectedAsset.uri);
+    
+      // Use simple string for mediaTypes to avoid deprecation warning
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: 'images', 
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.5,
+      });
+    
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const selectedAsset = result.assets[0];
+        await uploadImage(selectedAsset.uri);
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'Could not select image.');
     }
   };
-
+  
   const uploadImage = async (uri: string) => {
     if (!user) return;
   
     setIsUploadingImage(true);
-    
+  
     try {
       const fileName = `profile_${user.uid}_${Date.now()}.jpg`;
       const storageRef = ref(storage, `profileImages/${fileName}`);
-      
-      const fetchResponse = await fetch(uri);
-      const blob = await fetchResponse.blob();
-      
-      await uploadBytes(storageRef, blob);
-      const downloadURL = await getDownloadURL(storageRef);
-      
-      await setDoc(doc(db, 'users', user.uid), {
-        profileImage: downloadURL
-      }, { merge: true });
-      
-      setProfileImage(downloadURL);
-      Alert.alert('Transmission Complete', 'Profile image updated successfully');
+  
+      console.log("Starting upload with reference:", storageRef.fullPath);
+  
+      // แปลง URI เป็น Blob
+      const response = await fetch(uri);
+      const blob = await response.blob();
+  
+      // ใช้ uploadBytesResumable เพื่อรองรับ progress tracking
+      const uploadTask = uploadBytesResumable(storageRef, blob);
+      console.log("Firebase Storage instance:", storage);
+      console.log("Firebase Auth user:", user);
+      uploadTask.on('state_changed',
+        (snapshot) => {
+          // สามารถเพิ่ม progress bar ได้ที่นี่
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          console.log(`Upload is ${progress}% done`);
+        },
+        (error) => {
+          console.error("Upload error:", error);
+          Alert.alert("Error", `Upload failed: ${error.message}`);
+        },
+        async () => {
+          // อัปโหลดสำเร็จ ดึง URL มาใช้
+          const downloadURL = await getDownloadURL(storageRef);
+          console.log("Download URL:", downloadURL);
+  
+          await setDoc(doc(db, 'users', user.uid), {
+            profileImage: downloadURL
+          }, { merge: true });
+  
+          setProfileImage(downloadURL);
+          Alert.alert("Success", "Profile picture updated successfully");
+        }
+      );
     } catch (error) {
-      console.error('Error uploading image:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      Alert.alert('Error', `Failed to transmit image: ${errorMessage}`);
+      console.error("Error uploading image:", error);
+      Alert.alert("Error", "Failed to upload profile picture.");
     } finally {
       setIsUploadingImage(false);
     }
