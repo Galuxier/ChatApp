@@ -110,80 +110,121 @@ export default function ProfileScreen() {
       // Request permissions first
       if (Platform.OS !== 'web') {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        console.log('Permission status:', status);
         if (status !== 'granted') {
           Alert.alert('Permission Denied', 'Access to media library is required to upload your profile image.');
           return;
         }
       }
-    
-      // Use simple string for mediaTypes to avoid deprecation warning
+      
+      // Launch image picker with correct mediaTypes
+      console.log('Launching image picker...');
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: 'images', 
+        mediaTypes: 'images', // Correct for v16.0.6
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.5,
       });
-    
+      
+      console.log('Image picker result:', JSON.stringify(result, null, 2)); // Detailed logging
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const selectedAsset = result.assets[0];
+        console.log('Selected image URI:', selectedAsset.uri);
         await uploadImage(selectedAsset.uri);
+      } else {
+        console.log('Image selection canceled or no assets returned');
       }
     } catch (error) {
       console.error('Error picking image:', error);
-      Alert.alert('Error', 'Could not select image.');
+      Alert.alert('Error', `Could not select image: ${error.message || 'Unknown error'}`);
     }
   };
   
   const uploadImage = async (uri: string) => {
-    if (!user) return;
+    if (!user) {
+      console.log('No user authenticated');
+      return;
+    }
   
     setIsUploadingImage(true);
   
     try {
       const fileName = `profile_${user.uid}_${Date.now()}.jpg`;
-      const storageRef = ref(storage, `profileImages/${fileName}`);
-  
-      console.log("Starting upload with reference:", storageRef.fullPath);
-  
-      // แปลง URI เป็น Blob
+      const storageRef = ref(storage, `profile_images/${fileName}`);
+      console.log('Storage reference:', storageRef.fullPath); // Debug full path
+      
+      console.log('Fetching image from URI:', uri);
       const response = await fetch(uri);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image: ${response.statusText}`);
+      }
       const blob = await response.blob();
-  
-      // ใช้ uploadBytesResumable เพื่อรองรับ progress tracking
+      console.log('Blob created, size:', blob.size);
+      
       const uploadTask = uploadBytesResumable(storageRef, blob);
-      console.log("Firebase Storage instance:", storage);
-      console.log("Firebase Auth user:", user);
-      uploadTask.on('state_changed',
-        (snapshot) => {
-          // สามารถเพิ่ม progress bar ได้ที่นี่
-          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-          console.log(`Upload is ${progress}% done`);
-        },
-        (error) => {
-          console.error("Upload error:", error);
-          Alert.alert("Error", `Upload failed: ${error.message}`);
-        },
-        async () => {
-          // อัปโหลดสำเร็จ ดึง URL มาใช้
-          const downloadURL = await getDownloadURL(storageRef);
-          console.log("Download URL:", downloadURL);
-  
-          await setDoc(doc(db, 'users', user.uid), {
-            profileImage: downloadURL
-          }, { merge: true });
-  
-          setProfileImage(downloadURL);
-          Alert.alert("Success", "Profile picture updated successfully");
-        }
-      );
+      
+      return new Promise((resolve, reject) => {
+        uploadTask.on(
+          'state_changed',
+          (snapshot) => {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            console.log('Upload progress:', progress + '%');
+          },
+          (error) => {
+            console.error('Upload task error:', {
+              code: error.code,
+              message: error.message,
+              serverResponse: error.serverResponse || 'No server response',
+            });
+            let errorMessage = 'Failed to upload image';
+            switch (error.code) {
+              case 'storage/unauthorized':
+                errorMessage = 'Unauthorized: Check authentication or storage rules';
+                break;
+              case 'storage/canceled':
+                errorMessage = 'Upload was canceled';
+                break;
+              case 'storage/unknown':
+                errorMessage = 'Unknown error: Check network, Firebase config, or server response';
+                break;
+              case 'storage/invalid-argument':
+                errorMessage = 'Invalid storage reference or file';
+                break;
+              default:
+                errorMessage = `Upload error: ${error.message}`;
+            }
+            reject(new Error(errorMessage));
+          },
+          async () => {
+            try {
+              const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+              console.log('Download URL:', downloadURL);
+              await setDoc(doc(db, 'users', user.uid), {
+                profileImage: downloadURL
+              }, { merge: true });
+              setProfileImage(downloadURL);
+              Alert.alert('Success', 'Profile picture updated successfully');
+              resolve(downloadURL);
+            } catch (error) {
+              console.error('Post-upload error:', error);
+              reject(error);
+            }
+          }
+        );
+      });
     } catch (error) {
-      console.error("Error uploading image:", error);
-      Alert.alert("Error", "Failed to upload profile picture.");
+      console.error('Error in uploadImage:', {
+        message: error.message,
+        stack: error.stack,
+      });
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred during upload';
+      Alert.alert('Error', errorMessage);
+      throw error;
     } finally {
       setIsUploadingImage(false);
     }
   };
-
+  
   const handleUpdate = async () => {
     if (!user) return;
     

@@ -1,5 +1,3 @@
-// Update your firebase.ts file with this configuration
-
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { initializeAuth, getReactNativePersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
@@ -30,6 +28,4 @@ export const auth = initializeAuth(app, {
 });
 
 export const db = getFirestore(app);
-
-// Make sure Storage is properly initialized with the correct bucket
 export const storage = getStorage(app);
