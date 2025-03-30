@@ -11,6 +11,8 @@ import {
   ActivityIndicator,
   SafeAreaView,
   Image,
+  ImageBackground,
+  Animated,
   Dimensions,
 } from 'react-native';
 import {
@@ -34,7 +36,7 @@ import { useAuth } from '../../context/auth';
 import { FontAwesome } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 interface Message {
   id: string;
@@ -55,6 +57,15 @@ export default function ChatScreen() {
   const flatListRef = useRef<FlatList>(null);
 
   const chatId = user && userId ? [user.uid, userId].sort().join('_') : '';
+
+  // Animation for stars
+  const stars = [...Array(20)].map(() => ({
+    top: Math.random() * height,
+    left: Math.random() * width,
+    size: Math.random() * 3 + 1,
+    opacity: new Animated.Value(Math.random() * 0.5 + 0.1),
+    duration: Math.random() * 2000 + 1000,
+  }));
 
   // Function to ensure chat exists in database
   const ensureChatExists = async () => {
@@ -106,7 +117,7 @@ export default function ChatScreen() {
         const userDoc = await getDoc(doc(db, 'users', userId));
         if (userDoc.exists()) {
           const userData = userDoc.data();
-          setFriendName(userData.displayName || 'Chat');
+          setFriendName(userData.displayName || 'Unknown Contact');
           setFriendImage(userData.profileImage || null);
         }
         await ensureChatExists();
@@ -118,6 +129,25 @@ export default function ChatScreen() {
     };
 
     fetchFriendData();
+
+    // Animate stars twinkling
+    stars.forEach(star => {
+      const twinkle = () => {
+        Animated.sequence([
+          Animated.timing(star.opacity, {
+            toValue: Math.random() * 0.7 + 0.3,
+            duration: star.duration,
+            useNativeDriver: true,
+          }),
+          Animated.timing(star.opacity, {
+            toValue: Math.random() * 0.5 + 0.1,
+            duration: star.duration,
+            useNativeDriver: true,
+          }),
+        ]).start(twinkle);
+      };
+      twinkle();
+    });
   }, [userId, user]);
 
   // Function to mark all unread messages as read
@@ -265,136 +295,202 @@ export default function ChatScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#3498db" />
-      </View>
+      <ImageBackground 
+        source={{ uri: 'https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?q=80&w=1000' }} 
+        style={styles.backgroundImage}
+      >
+        <LinearGradient
+          colors={['rgba(0, 15, 36, 0.9)', 'rgba(10, 25, 47, 0.95)']}
+          style={styles.gradient}
+        >
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#00DDEB" />
+            <Text style={styles.loadingText}>Connecting to Comm System...</Text>
+          </View>
+        </LinearGradient>
+      </ImageBackground>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header with gradient */}
-      <LinearGradient colors={['#3498db', '#2980b9']} style={styles.headerGradient}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <FontAwesome name="arrow-left" size={20} color="white" />
-          </TouchableOpacity>
-
-          <View style={styles.headerProfile}>
-            {friendImage ? (
-              <Image source={{ uri: friendImage }} style={styles.profileImage} />
-            ) : (
-              <View style={styles.profileImagePlaceholder}>
-                <Text style={styles.profileImageText}>{friendName.charAt(0).toUpperCase()}</Text>
-              </View>
-            )}
-            <Text style={styles.headerTitle}>{friendName}</Text>
-          </View>
-        </View>
-      </LinearGradient>
-
-      <KeyboardAvoidingView
-        style={styles.keyboardAvoid}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    <ImageBackground 
+      source={{ uri: 'https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?q=80&w=1000' }} 
+      style={styles.backgroundImage}
+    >
+      <LinearGradient
+        colors={['rgba(0, 15, 36, 0.9)', 'rgba(10, 25, 47, 0.95)']}
+        style={styles.gradient}
       >
-        <FlatList
-          ref={flatListRef}
-          data={messagesWithDateSeparators()}
-          renderItem={({ item }) => {
-            // Date separator
-            if ('type' in item && item.type === 'date') {
-              return (
-                <View style={styles.dateSeparator}>
-                  <View style={styles.dateLine} />
-                  <Text style={styles.dateText}>{item.date}</Text>
-                  <View style={styles.dateLine} />
-                </View>
-              );
-            }
+        <SafeAreaView style={styles.container}>
+          {/* Header */}
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+              <FontAwesome name="arrow-left" size={20} color="#00DDEB" />
+            </TouchableOpacity>
 
-            // Regular message
-            const message = item as Message;
-            const isMine = message.senderId === user?.uid;
-
-            return (
-              <View
-                style={[styles.messageContainer, isMine ? styles.myMessageContainer : styles.theirMessageContainer]}
-              >
-                <View style={[styles.messageBubble, isMine ? styles.myMessage : styles.theirMessage]}>
-                  <Text style={[styles.messageText, isMine ? styles.myMessageText : styles.theirMessageText]}>
-                    {message.text}
-                  </Text>
-                  <View style={styles.messageFooter}>
-                    <Text style={[styles.timeText, isMine ? styles.myTimeText : styles.theirTimeText]}>
-                      {formatTime(message.timestamp)}
-                    </Text>
-                    {isMine && (
-                      <Text
-                        style={[
-                          styles.statusText,
-                          message.status === 'read' ? styles.readStatus : styles.sentStatus,
-                        ]}
-                      >
-                        {message.status === 'read' ? '✓✓' : '✓'}
-                      </Text>
-                    )}
-                  </View>
-                </View>
-              </View>
-            );
-          }}
-          keyExtractor={item => ('id' in item ? item.id : item.type + item.date)}
-          contentContainerStyle={styles.messagesList}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Image source={{ uri: 'https://via.placeholder.com/150' }} style={styles.emptyImage} />
-              <Text style={styles.emptyTitle}>No messages yet</Text>
-              <Text style={styles.emptyText}>Send a message to start the conversation</Text>
+            <View style={styles.headerProfile}>
+              {friendImage ? (
+                <Image source={{ uri: friendImage }} style={styles.profileImage} />
+              ) : (
+                <LinearGradient
+                  colors={['#00DDEB', '#1E90FF']}
+                  style={styles.profileImage}
+                >
+                  <Text style={styles.profileImageText}>{friendName.charAt(0).toUpperCase()}</Text>
+                </LinearGradient>
+              )}
+              <Text style={styles.headerTitle}>{friendName}</Text>
+              <Text style={styles.headerStatus}>Online</Text>
             </View>
-          }
-        />
+          </View>
 
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
-            value={message}
-            onChangeText={setMessage}
-            placeholder="Type a message..."
-            multiline
-            placeholderTextColor="#95a5a6"
-          />
+          <KeyboardAvoidingView
+            style={styles.keyboardAvoid}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+          >
+            <FlatList
+              ref={flatListRef}
+              data={messagesWithDateSeparators()}
+              renderItem={({ item }) => {
+                // Date separator
+                if ('type' in item && item.type === 'date') {
+                  return (
+                    <View style={styles.dateSeparator}>
+                      <View style={styles.dateLine} />
+                      <Text style={styles.dateText}>{item.date}</Text>
+                      <View style={styles.dateLine} />
+                    </View>
+                  );
+                }
 
-          <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
-            <LinearGradient colors={['#3498db', '#2980b9']} style={styles.sendButtonGradient}>
-              <FontAwesome name="send" size={18} color="white" />
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+                // Regular message
+                const message = item as Message;
+                const isMine = message.senderId === user?.uid;
+
+                return (
+                  <View
+                    style={[styles.messageContainer, isMine ? styles.myMessageContainer : styles.theirMessageContainer]}
+                  >
+                    <View style={[styles.messageBubble, isMine ? styles.myMessage : styles.theirMessage]}>
+                      <Text style={[styles.messageText, isMine ? styles.myMessageText : styles.theirMessageText]}>
+                        {message.text}
+                      </Text>
+                      <View style={styles.messageFooter}>
+                        <Text style={[styles.timeText, isMine ? styles.myTimeText : styles.theirTimeText]}>
+                          {formatTime(message.timestamp)}
+                        </Text>
+                        {isMine && (
+                          <Text
+                            style={[
+                              styles.statusText,
+                              message.status === 'read' ? styles.readStatus : styles.sentStatus,
+                            ]}
+                          >
+                            {message.status === 'read' ? '✓✓' : '✓'}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  </View>
+                );
+              }}
+              keyExtractor={item => ('id' in item ? item.id : item.type + item.date)}
+              contentContainerStyle={styles.messagesList}
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Image source={{ uri: 'https://via.placeholder.com/150' }} style={styles.emptyImage} />
+                  <Text style={styles.emptyTitle}>No transmissions yet</Text>
+                  <Text style={styles.emptyText}>Send a signal to initiate contact</Text>
+                </View>
+              }
+            />
+
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.input}
+                value={message}
+                onChangeText={setMessage}
+                placeholder="Enter transmission..."
+                placeholderTextColor="#A0B1C2"
+                multiline
+              />
+              <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
+                <LinearGradient
+                  colors={['#00DDEB', '#1E90FF']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.sendButtonGradient}
+                >
+                  <FontAwesome name="send" size={18} color="white" />
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+
+          {/* Animated stars */}
+          <View style={styles.starsContainer}>
+            {stars.map((star, i) => (
+              <Animated.View
+                key={i}
+                style={[
+                  styles.star,
+                  {
+                    top: star.top,
+                    left: star.left,
+                    width: star.size,
+                    height: star.size,
+                    opacity: star.opacity,
+                  },
+                ]}
+              />
+            ))}
+          </View>
+
+          {/* Radar effect */}
+          <View style={styles.radarContainer}>
+            <View style={styles.radarCircle} />
+            <View style={[styles.radarCircle, styles.radarPulse]} />
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
+  backgroundImage: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  gradient: {
+    flex: 1,
+  },
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
-  headerGradient: {
-    borderBottomLeftRadius: 15,
-    borderBottomRightRadius: 15,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#00DDEB',
+    fontSize: 16,
+    marginTop: 10,
+    fontFamily: 'monospace',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 15,
     paddingTop: Platform.OS === 'android' ? 35 : 15,
+    backgroundColor: 'rgba(10, 25, 47, 0.9)',
+    borderBottomWidth: 2,
+    borderBottomColor: '#00DDEB',
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
   },
   backButton: {
     width: 40,
@@ -413,18 +509,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     marginRight: 10,
     borderWidth: 2,
-    borderColor: 'white',
-  },
-  profileImagePlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: '#00DDEB',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 10,
-    borderWidth: 2,
-    borderColor: 'white',
   },
   profileImageText: {
     color: 'white',
@@ -434,22 +521,24 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: 'white',
+    color: '#FFFFFF',
+    fontFamily: 'monospace',
+  },
+  headerStatus: {
+    fontSize: 12,
+    color: '#00FF7F',
+    marginLeft: 10,
+    fontFamily: 'monospace',
   },
   keyboardAvoid: {
     flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   messagesList: {
     padding: 10,
     paddingBottom: 20,
   },
   messageContainer: {
-    marginVertical: 2,
+    marginVertical: 5,
     paddingHorizontal: 10,
   },
   myMessageContainer: {
@@ -461,34 +550,33 @@ const styles = StyleSheet.create({
     maxWidth: '80%',
   },
   messageBubble: {
-    borderRadius: 18,
+    borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
     paddingBottom: 6,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 1,
+    backgroundColor: 'rgba(10, 25, 47, 0.9)',
+    borderWidth: 1,
+    borderColor: '#00DDEB',
   },
   myMessage: {
-    backgroundColor: '#3498db',
-    borderTopRightRadius: 2,
+    backgroundColor: 'rgba(0, 221, 235, 0.2)',
+    borderColor: '#00DDEB',
   },
   theirMessage: {
-    backgroundColor: 'white',
-    borderTopLeftRadius: 2,
+    backgroundColor: 'rgba(30, 144, 255, 0.2)',
+    borderColor: '#1E90FF',
   },
   messageText: {
     fontSize: 16,
     marginBottom: 4,
     lineHeight: 22,
+    fontFamily: 'monospace',
   },
   myMessageText: {
-    color: 'white',
+    color: '#FFFFFF',
   },
   theirMessageText: {
-    color: '#34495e',
+    color: '#E6F0FA',
   },
   messageFooter: {
     flexDirection: 'row',
@@ -498,22 +586,23 @@ const styles = StyleSheet.create({
   timeText: {
     fontSize: 11,
     marginRight: 4,
+    fontFamily: 'monospace',
   },
   myTimeText: {
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: '#A0B1C2',
   },
   theirTimeText: {
-    color: '#95a5a6',
+    color: '#A0B1C2',
   },
   statusText: {
     fontSize: 10,
     fontWeight: 'bold',
   },
   sentStatus: {
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: '#00DDEB',
   },
   readStatus: {
-    color: '#2ecc71',
+    color: '#00FF7F',
   },
   dateSeparator: {
     flexDirection: 'row',
@@ -524,27 +613,29 @@ const styles = StyleSheet.create({
   dateLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#e0e0e0',
+    backgroundColor: '#00DDEB',
+    opacity: 0.3,
   },
   dateText: {
     fontSize: 12,
-    color: '#7f8c8d',
+    color: '#00DDEB',
     marginHorizontal: 10,
     fontWeight: '500',
+    fontFamily: 'monospace',
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
     paddingVertical: 8,
-    backgroundColor: 'white',
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    backgroundColor: 'rgba(10, 25, 47, 0.9)',
+    borderTopWidth: 2,
+    borderTopColor: '#00DDEB',
   },
   input: {
     flex: 1,
-    backgroundColor: '#f8f8f8',
-    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 10,
     paddingHorizontal: 15,
     paddingTop: 10,
     paddingBottom: 10,
@@ -552,7 +643,9 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#ebebeb',
+    borderColor: '#00DDEB',
+    color: '#FFFFFF',
+    fontFamily: 'monospace',
   },
   sendButton: {
     width: 40,
@@ -579,16 +672,60 @@ const styles = StyleSheet.create({
     opacity: 0.5,
     marginBottom: 20,
     borderRadius: 60,
+    borderWidth: 2,
+    borderColor: '#00DDEB',
   },
   emptyTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 10,
-    color: '#34495e',
+    color: '#FFFFFF',
+    fontFamily: 'monospace',
   },
   emptyText: {
     fontSize: 16,
-    color: '#7f8c8d',
+    color: '#A0B1C2',
     textAlign: 'center',
+    fontFamily: 'monospace',
+  },
+  starsContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: -1,
+  },
+  star: {
+    position: 'absolute',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+  },
+  radarContainer: {
+    position: 'absolute',
+    bottom: 80,
+    right: 20,
+    width: 60,
+    height: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  radarCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#00DDEB',
+    opacity: 0.5,
+    position: 'absolute',
+  },
+  radarPulse: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 2,
+    borderColor: '#00DDEB',
+    opacity: 0.3,
+    animation: 'pulse 2s infinite',
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   TextInput, 
@@ -8,13 +8,19 @@ import {
   ActivityIndicator,
   Alert,
   Keyboard,
-  SafeAreaView
+  SafeAreaView,
+  ImageBackground,
+  Animated,
+  Dimensions,
 } from 'react-native';
 import { collection, query, where, getDocs, doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { router } from 'expo-router';
 import { useAuth } from '../context/auth';
 import { FontAwesome } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+
+const { width, height } = Dimensions.get('window');
 
 export default function AddFriendScreen() {
   const { user } = useAuth();
@@ -22,6 +28,51 @@ export default function AddFriendScreen() {
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [searchResult, setSearchResult] = useState<any>(null);
   const [isAdding, setIsAdding] = useState<boolean>(false);
+
+  // Animation states for radar
+  const [radarAngle] = useState(new Animated.Value(0));
+  const [stars] = useState(
+    [...Array(20)].map(() => ({
+      top: Math.random() * height,
+      left: Math.random() * width,
+      size: Math.random() * 3 + 1,
+      opacity: new Animated.Value(Math.random() * 0.5 + 0.1),
+      duration: Math.random() * 2000 + 1000,
+    }))
+  );
+
+  useEffect(() => {
+    // Radar sweep animation
+    const radarAnimation = Animated.loop(
+      Animated.timing(radarAngle, {
+        toValue: 360,
+        duration: 3000,
+        useNativeDriver: true,
+      })
+    );
+    radarAnimation.start();
+
+    // Stars twinkling animation
+    stars.forEach(star => {
+      const twinkle = () => {
+        Animated.sequence([
+          Animated.timing(star.opacity, {
+            toValue: Math.random() * 0.7 + 0.3,
+            duration: star.duration,
+            useNativeDriver: true,
+          }),
+          Animated.timing(star.opacity, {
+            toValue: Math.random() * 0.5 + 0.1,
+            duration: star.duration,
+            useNativeDriver: true,
+          }),
+        ]).start(twinkle);
+      };
+      twinkle();
+    });
+
+    return () => radarAnimation.stop();
+  }, [radarAngle, stars]);
 
   const searchUser = async () => {
     if (pingId.trim() === '') {
@@ -34,7 +85,6 @@ export default function AddFriendScreen() {
     Keyboard.dismiss();
 
     try {
-      // Query Firestore to find user with this pingId
       const q = query(
         collection(db, 'users'),
         where('pingId', '==', pingId.trim())
@@ -45,13 +95,11 @@ export default function AddFriendScreen() {
       if (querySnapshot.empty) {
         setSearchResult({ found: false });
       } else {
-        // User found
         const userDoc = querySnapshot.docs[0];
         const userData = userDoc.data();
         
-        // Don't allow adding yourself
         if (userDoc.id === user?.uid) {
-          Alert.alert('Error', 'You cannot add yourself as a friend');
+          Alert.alert('Error', 'You cannot add yourself as a contact');
           setIsSearching(false);
           return;
         }
@@ -65,7 +113,7 @@ export default function AddFriendScreen() {
       }
     } catch (error) {
       console.error('Error searching for user:', error);
-      Alert.alert('Error', 'Failed to search for user. Please try again.');
+      Alert.alert('Error', 'Failed to scan for contact. Please try again.');
     } finally {
       setIsSearching(false);
     }
@@ -79,28 +127,21 @@ export default function AddFriendScreen() {
     try {
       const currentUserId = user.uid;
       const friendId = searchResult.userId;
-      
-      // Create or get the chat document between these users
       const chatId = [currentUserId, friendId].sort().join('_');
       
       await Promise.all([
-        // Create userChat for current user
         setDoc(doc(db, 'userChats', `${currentUserId}_${chatId}`), {
           userId: currentUserId,
           chatId: chatId,
           friendId: friendId,
           createdAt: new Date()
         }),
-        
-        // Create userChat for the friend
         setDoc(doc(db, 'userChats', `${friendId}_${chatId}`), {
           userId: friendId,
           chatId: chatId,
           friendId: currentUserId,
           createdAt: new Date()
         }),
-        
-        // Create chat document
         setDoc(doc(db, 'chats', chatId), {
           participants: [currentUserId, friendId],
           createdAt: new Date(),
@@ -109,128 +150,205 @@ export default function AddFriendScreen() {
       ]);
 
       Alert.alert(
-        'Success', 
+        'Contact Established', 
         `${searchResult.displayName} added successfully!`,
         [
           { 
-            text: 'Start Chat', 
+            text: 'Initiate Transmission', 
             onPress: () => router.push(`/chat/${friendId}`)
           },
           {
-            text: 'Back to Chats',
+            text: 'Return to Contacts',
             onPress: () => router.push('/(tabs)/chats')
           }
         ]
       );
     } catch (error) {
       console.error('Error adding friend:', error);
-      Alert.alert('Error', 'Failed to add friend. Please try again.');
+      Alert.alert('Error', 'Failed to establish contact. Please try again.');
     } finally {
       setIsAdding(false);
     }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Custom Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <FontAwesome name="arrow-left" size={20} color="#3498db" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Add Friend</Text>
-        <View style={styles.headerRight} />
-      </View>
-      
-      <View style={styles.content}>
-        <Text style={styles.subtitle}>Enter your friend's Ping ID to connect</Text>
-        
-        <View style={styles.searchContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter Ping ID"
-            value={pingId}
-            onChangeText={setPingId}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <TouchableOpacity 
-            style={styles.searchButton} 
-            onPress={searchUser}
-            disabled={isSearching}
-          >
-            {isSearching ? (
-              <ActivityIndicator size="small" color="white" />
-            ) : (
-              <Text style={styles.searchButtonText}>Search</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-        
-        {searchResult && (
-          <View style={styles.resultContainer}>
-            {searchResult.found ? (
-              <>
-                <View style={styles.userFound}>
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>
-                      {searchResult.displayName.charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={styles.userInfo}>
-                    <Text style={styles.displayName}>{searchResult.displayName}</Text>
-                    <Text style={styles.pingIdText}>Ping ID: {searchResult.pingId}</Text>
-                  </View>
-                </View>
-                
-                <TouchableOpacity 
-                  style={styles.addButton}
-                  onPress={addFriend}
-                  disabled={isAdding}
+    <ImageBackground 
+      source={{ uri: 'https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?q=80&w=1000' }} 
+      style={styles.backgroundImage}
+    >
+      <LinearGradient
+        colors={['rgba(45, 13, 83, 0.7)', 'rgba(76, 41, 122, 0.85)', 'rgba(30, 7, 55, 0.95)']}
+        style={styles.gradient}
+      >
+        <SafeAreaView style={styles.container}>
+          {/* Custom Header */}
+          <View style={styles.header}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => router.back()}
+            >
+              <FontAwesome name="arrow-left" size={20} color="#B39DDB" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Scan for Contact</Text>
+            <View style={styles.headerRight} />
+          </View>
+          
+          <View style={styles.content}>
+            <Text style={styles.subtitle}>Enter Ping ID to scan the galaxy</Text>
+            
+            <View style={styles.searchContainer}>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter Ping ID"
+                placeholderTextColor="#B39DDB"
+                value={pingId}
+                onChangeText={setPingId}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <TouchableOpacity 
+                style={styles.searchButton} 
+                onPress={searchUser}
+                disabled={isSearching}
+              >
+                <LinearGradient
+                  colors={['#9C27B0', '#673AB7']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.gradientButton}
                 >
-                  {isAdding ? (
+                  {isSearching ? (
                     <ActivityIndicator size="small" color="white" />
                   ) : (
-                    <Text style={styles.addButtonText}>Add Friend</Text>
+                    <Text style={styles.searchButtonText}>Scan</Text>
                   )}
-                </TouchableOpacity>
-              </>
-            ) : (
-              <View style={styles.notFound}>
-                <Text style={styles.notFoundText}>No user found with this Ping ID</Text>
-                <Text style={styles.notFoundSubtext}>Check the ID and try again</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+            
+            {isSearching && (
+              <View style={styles.radarContainer}>
+                <Animated.View
+                  style={[
+                    styles.radarSweep,
+                    {
+                      transform: [
+                        { rotate: radarAngle.interpolate({
+                            inputRange: [0, 360],
+                            outputRange: ['0deg', '360deg']
+                          })
+                        }
+                      ]
+                    }
+                  ]}
+                />
+                <Text style={styles.radarText}>Scanning galaxy...</Text>
+              </View>
+            )}
+
+            {searchResult && !isSearching && (
+              <View style={styles.resultContainer}>
+                {searchResult.found ? (
+                  <>
+                    <View style={styles.userFound}>
+                      <LinearGradient
+                        colors={['#9C27B0', '#673AB7']}
+                        style={styles.avatar}
+                      >
+                        <Text style={styles.avatarText}>
+                          {searchResult.displayName.charAt(0).toUpperCase()}
+                        </Text>
+                      </LinearGradient>
+                      <View style={styles.userInfo}>
+                        <Text style={styles.displayName}>{searchResult.displayName}</Text>
+                        <Text style={styles.pingIdText}>Ping ID: {searchResult.pingId}</Text>
+                      </View>
+                    </View>
+                    
+                    <TouchableOpacity 
+                      style={styles.addButton}
+                      onPress={addFriend}
+                      disabled={isAdding}
+                    >
+                      <LinearGradient
+                        colors={['#9C27B0', '#673AB7']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={styles.gradientButton}
+                      >
+                        {isAdding ? (
+                          <ActivityIndicator size="small" color="white" />
+                        ) : (
+                          <Text style={styles.addButtonText}>Establish Contact</Text>
+                        )}
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <View style={styles.notFound}>
+                    <Text style={styles.notFoundText}>No signal detected</Text>
+                    <Text style={styles.notFoundSubtext}>Check the Ping ID and scan again</Text>
+                  </View>
+                )}
               </View>
             )}
           </View>
-        )}
-      </View>
-    </SafeAreaView>
+
+          {/* Animated stars */}
+          <View style={styles.starsContainer}>
+            {stars.map((star, i) => (
+              <Animated.View
+                key={i}
+                style={[
+                  styles.star,
+                  {
+                    top: star.top,
+                    left: star.left,
+                    width: star.size,
+                    height: star.size,
+                    opacity: star.opacity,
+                  },
+                ]}
+              />
+            ))}
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
+  backgroundImage: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  gradient: {
+    flex: 1,
+  },
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 15,
-    backgroundColor: 'white',
+    backgroundColor: 'rgba(30, 7, 55, 0.7)',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: 'rgba(179, 157, 219, 0.3)',
   },
   backButton: {
     width: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2c3e50',
+    color: '#D1C4E9',
+    fontFamily: 'monospace',
   },
   headerRight: {
     width: 40,
@@ -242,7 +360,9 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     marginBottom: 30,
-    color: '#7f8c8d',
+    color: '#B39DDB',
+    fontFamily: 'monospace',
+    textAlign: 'center',
   },
   searchContainer: {
     flexDirection: 'row',
@@ -250,16 +370,20 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    backgroundColor: 'white',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 5,
     padding: 15,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: 'rgba(179, 157, 219, 0.3)',
     marginRight: 10,
+    color: '#FFFFFF',
+    fontFamily: 'monospace',
   },
   searchButton: {
-    backgroundColor: '#3498db',
     borderRadius: 5,
+    overflow: 'hidden',
+  },
+  gradientButton: {
     padding: 15,
     justifyContent: 'center',
     alignItems: 'center',
@@ -269,16 +393,34 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: 'bold',
     fontSize: 16,
+    fontFamily: 'monospace',
+  },
+  radarContainer: {
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  radarSweep: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 2,
+    borderColor: '#B39DDB',
+    borderTopColor: 'transparent',
+    borderRightColor: 'transparent',
+    opacity: 0.7,
+  },
+  radarText: {
+    marginTop: 10,
+    color: '#B39DDB',
+    fontSize: 16,
+    fontFamily: 'monospace',
   },
   resultContainer: {
-    backgroundColor: 'white',
+    backgroundColor: 'rgba(30, 7, 55, 0.7)',
     borderRadius: 10,
     padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(179, 157, 219, 0.3)',
   },
   userFound: {
     flexDirection: 'row',
@@ -289,10 +431,11 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#3498db',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 15,
+    borderWidth: 2,
+    borderColor: '#B39DDB',
   },
   avatarText: {
     color: 'white',
@@ -305,23 +448,24 @@ const styles = StyleSheet.create({
   displayName: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2c3e50',
+    color: '#D1C4E9',
     marginBottom: 5,
+    fontFamily: 'monospace',
   },
   pingIdText: {
     fontSize: 14,
-    color: '#7f8c8d',
+    color: '#B39DDB',
+    fontFamily: 'monospace',
   },
   addButton: {
-    backgroundColor: '#3498db',
-    padding: 15,
     borderRadius: 5,
-    alignItems: 'center',
+    overflow: 'hidden',
   },
   addButtonText: {
     color: 'white',
     fontWeight: 'bold',
     fontSize: 16,
+    fontFamily: 'monospace',
   },
   notFound: {
     alignItems: 'center',
@@ -330,11 +474,26 @@ const styles = StyleSheet.create({
   notFoundText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#e74c3c',
+    color: '#FF4081',
     marginBottom: 10,
+    fontFamily: 'monospace',
   },
   notFoundSubtext: {
     fontSize: 14,
-    color: '#7f8c8d',
+    color: '#B39DDB',
+    fontFamily: 'monospace',
+  },
+  starsContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: -1,
+  },
+  star: {
+    position: 'absolute',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
   },
 });

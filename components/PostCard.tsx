@@ -66,7 +66,7 @@ export const PostCard: React.FC<PostCardProps> = ({
             <Image source={{ uri: post.userImage }} style={styles.postAvatar} />
           ) : (
             <LinearGradient
-              colors={['#4facfe', '#00f2fe']}
+              colors={['#9C27B0', '#673AB7']}
               style={styles.postAvatar}
             >
               <Text style={styles.avatarText}>{post.userName.charAt(0).toUpperCase()}</Text>
@@ -87,7 +87,7 @@ export const PostCard: React.FC<PostCardProps> = ({
             onPress={() => onDelete(post.id)}
             hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
           >
-            <FontAwesome name="trash" size={16} color="#e74c3c" />
+            <FontAwesome name="trash" size={16} color="#FF6E6E" />
           </TouchableOpacity>
         )}
       </View>
@@ -123,7 +123,7 @@ export const PostCard: React.FC<PostCardProps> = ({
           <FontAwesome
             name={post.isLikedByMe ? 'thumbs-up' : 'thumbs-o-up'}
             size={18}
-            color={post.isLikedByMe ? '#3498db' : '#7f8c8d'}
+            color={post.isLikedByMe ? '#B39DDB' : '#D1C4E9'}
           />
           <Text 
             style={[
@@ -141,7 +141,7 @@ export const PostCard: React.FC<PostCardProps> = ({
           style={styles.actionButton} 
           onPress={() => onComment(post)}
         >
-          <FontAwesome name="comment-o" size={18} color="#7f8c8d" />
+          <FontAwesome name="comment-o" size={18} color="#D1C4E9" />
           <Text style={styles.actionButtonText}>Comment</Text>
         </TouchableOpacity>
       </View>
@@ -151,16 +151,12 @@ export const PostCard: React.FC<PostCardProps> = ({
 
 const styles = StyleSheet.create({
   postCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
+    backgroundColor: 'rgba(30, 7, 55, 0.7)',
+    borderRadius: 15,
     marginBottom: 12,
     marginHorizontal: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3.84,
-    elevation: 2,
-    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(179, 157, 219, 0.3)',
   },
   postHeader: {
     flexDirection: 'row',
@@ -168,10 +164,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   avatarContainer: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    marginRight: 12,
   },
   postAvatar: {
     width: 42,
@@ -179,7 +172,6 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
   },
   avatarText: {
     color: 'white',
@@ -192,19 +184,19 @@ const styles = StyleSheet.create({
   postUserName: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#2c3e50',
+    color: '#D1C4E9',
     marginBottom: 2,
   },
   postTime: {
     fontSize: 12,
-    color: '#7f8c8d',
+    color: '#B39DDB',
   },
   deletePostButton: {
     padding: 6,
   },
   postText: {
     fontSize: 16,
-    color: '#2c3e50',
+    color: '#FFFFFF',
     lineHeight: 22,
     paddingHorizontal: 16,
     paddingBottom: 16,
@@ -223,18 +215,18 @@ const styles = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: '#3498db',
+    backgroundColor: '#B39DDB',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 6,
   },
   statText: {
     fontSize: 13,
-    color: '#7f8c8d',
+    color: '#D1C4E9',
   },
   divider: {
     height: 1,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: 'rgba(179, 157, 219, 0.3)',
     marginHorizontal: 16,
   },
   postActions: {
@@ -250,17 +242,17 @@ const styles = StyleSheet.create({
   },
   actionDivider: {
     width: 1,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: 'rgba(179, 157, 219, 0.3)',
     marginVertical: 8,
   },
   actionButtonText: {
     marginLeft: 8,
-    color: '#7f8c8d',
+    color: '#D1C4E9',
     fontSize: 14,
     fontWeight: '500',
   },
   activeActionText: {
-    color: '#3498db',
+    color: '#B39DDB',
     fontWeight: '600',
   },
 });

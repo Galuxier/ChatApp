@@ -12,6 +12,9 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  ImageBackground,
+  Animated,
+  Dimensions,
 } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -31,6 +34,9 @@ import {
 import { db } from '../../../firebase';
 import { useAuth } from '../../../context/auth';
 import { PostCard } from '../../../components/PostCard';
+import { LinearGradient } from 'expo-linear-gradient';
+
+const { width, height } = Dimensions.get('window');
 
 interface PostLike {
   userId: string;
@@ -79,6 +85,15 @@ export default function ProfileScreen() {
   const [newComment, setNewComment] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
   const [loadingComments, setLoadingComments] = useState(false);
+
+  // Animation for stars
+  const stars = [...Array(20)].map(() => ({
+    top: Math.random() * height,
+    left: Math.random() * width,
+    size: Math.random() * 3 + 1,
+    opacity: new Animated.Value(Math.random() * 0.5 + 0.1),
+    duration: Math.random() * 2000 + 1000,
+  }));
 
   useEffect(() => {
     const checkFriendship = async () => {
@@ -167,7 +182,7 @@ export default function ProfileScreen() {
             timestamp: postData.timestamp?.toDate() || new Date(),
             likes: postData.likes || [],
             likeCount: postData.likes?.length || 0,
-            commentCount: commentsSnapshot.size, // ใช้ size จาก Firestore เพื่อความแม่นยำ
+            commentCount: commentsSnapshot.size,
             isLikedByMe,
           });
         }
@@ -181,6 +196,25 @@ export default function ProfileScreen() {
     };
 
     fetchPosts();
+
+    // Animate stars twinkling
+    stars.forEach(star => {
+      const twinkle = () => {
+        Animated.sequence([
+          Animated.timing(star.opacity, {
+            toValue: Math.random() * 0.7 + 0.3,
+            duration: star.duration,
+            useNativeDriver: true,
+          }),
+          Animated.timing(star.opacity, {
+            toValue: Math.random() * 0.5 + 0.1,
+            duration: star.duration,
+            useNativeDriver: true,
+          }),
+        ]).start(twinkle);
+      };
+      twinkle();
+    });
   }, [userId, user, profile]);
 
   const handleLikePost = async (postId: string) => {
@@ -297,7 +331,7 @@ export default function ProfileScreen() {
       const userData = userDoc.exists() ? userDoc.data() : { displayName: 'Anonymous' };
 
       const newCommentObj: Comment = {
-        id: commentRef.id, // ใช้ ID จริงจาก Firestore
+        id: commentRef.id,
         userId: user.uid,
         userName: userData.displayName || 'Anonymous',
         userImage: userData.profileImage || null,
@@ -381,167 +415,248 @@ export default function ProfileScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#3498db" />
-      </View>
+      <ImageBackground 
+        source={{ uri: 'https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?q=80&w=1000' }} 
+        style={styles.backgroundImage}
+      >
+        <LinearGradient
+          colors={['rgba(45, 13, 83, 0.7)', 'rgba(76, 41, 122, 0.85)', 'rgba(30, 7, 55, 0.95)']}
+          style={styles.gradient}
+        >
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#B39DDB" />
+          </View>
+        </LinearGradient>
+      </ImageBackground>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <FlatList
-        data={posts}
-        keyExtractor={(item) => item.id}
-        ListHeaderComponent={
-          <View style={styles.profileHeader}>
-            {profile?.profileImage ? (
-              <Image source={{ uri: profile.profileImage }} style={styles.profileImage} />
-            ) : (
-              <View style={styles.profileImage}>
-                <Text style={styles.avatarText}>
-                  {profile?.displayName?.charAt(0).toUpperCase() || 'U'}
-                </Text>
-              </View>
-            )}
-            <Text style={styles.profileName}>{profile?.displayName}</Text>
-            <Text style={styles.postCount}>{posts.length} Posts</Text>
-
-            {!isOwnProfile && (
-              <View style={styles.actionButtonContainer}>
-                {isCheckingFriendship ? (
-                  <ActivityIndicator size="small" color="#3498db" />
-                ) : isFriend ? (
-                  <TouchableOpacity style={styles.chatButton} onPress={navigateToChat}>
-                    <FontAwesome name="comments" size={16} color="white" style={styles.buttonIcon} />
-                    <Text style={styles.buttonText}>Chat</Text>
-                  </TouchableOpacity>
+    <ImageBackground 
+      source={{ uri: 'https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?q=80&w=1000' }} 
+      style={styles.backgroundImage}
+    >
+      <LinearGradient
+        colors={['rgba(45, 13, 83, 0.7)', 'rgba(76, 41, 122, 0.85)', 'rgba(30, 7, 55, 0.95)']}
+        style={styles.gradient}
+      >
+        <View style={styles.container}>
+          <FlatList
+            data={posts}
+            keyExtractor={(item) => item.id}
+            ListHeaderComponent={
+              <View style={styles.profileHeader}>
+                {profile?.profileImage ? (
+                  <Image source={{ uri: profile.profileImage }} style={styles.profileImage} />
                 ) : (
-                  <TouchableOpacity
-                    style={styles.addFriendButton}
-                    onPress={addFriend}
-                    disabled={isAddingFriend}
+                  <LinearGradient
+                    colors={['#9C27B0', '#673AB7']}
+                    style={styles.profileImage}
                   >
-                    {isAddingFriend ? (
-                      <ActivityIndicator size="small" color="white" />
+                    <Text style={styles.avatarText}>
+                      {profile?.displayName?.charAt(0).toUpperCase() || 'U'}
+                    </Text>
+                  </LinearGradient>
+                )}
+                <Text style={styles.profileName}>{profile?.displayName}</Text>
+                <Text style={styles.postCount}>{posts.length} Posts</Text>
+
+                {!isOwnProfile && (
+                  <View style={styles.actionButtonContainer}>
+                    {isCheckingFriendship ? (
+                      <ActivityIndicator size="small" color="#B39DDB" />
+                    ) : isFriend ? (
+                      <TouchableOpacity style={styles.chatButton} onPress={navigateToChat}>
+                        <LinearGradient
+                          colors={['#9C27B0', '#673AB7']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={styles.gradientButton}
+                        >
+                          <FontAwesome name="comments" size={16} color="white" style={styles.buttonIcon} />
+                          <Text style={styles.buttonText}>Chat</Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
                     ) : (
-                      <>
-                        <FontAwesome name="user-plus" size={16} color="white" style={styles.buttonIcon} />
-                        <Text style={styles.buttonText}>Add Friend</Text>
-                      </>
+                      <TouchableOpacity
+                        style={styles.addFriendButton}
+                        onPress={addFriend}
+                        disabled={isAddingFriend}
+                      >
+                        <LinearGradient
+                          colors={['#9C27B0', '#673AB7']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={styles.gradientButton}
+                        >
+                          {isAddingFriend ? (
+                            <ActivityIndicator size="small" color="white" />
+                          ) : (
+                            <>
+                              <FontAwesome name="user-plus" size={16} color="white" style={styles.buttonIcon} />
+                              <Text style={styles.buttonText}>Add Friend</Text>
+                            </>
+                          )}
+                        </LinearGradient>
+                      </TouchableOpacity>
                     )}
-                  </TouchableOpacity>
+                  </View>
                 )}
               </View>
+            }
+            renderItem={({ item }) => (
+              <PostCard
+                post={item}
+                onLike={handleLikePost}
+                onComment={openComments}
+                onDelete={item.userId === user?.uid ? handleDeletePost : undefined}
+                onUserPress={handleUserPress}
+                isOwnPost={item.userId === user?.uid}
+              />
             )}
-          </View>
-        }
-        renderItem={({ item }) => (
-          <PostCard
-            post={item}
-            onLike={handleLikePost}
-            onComment={openComments}
-            onDelete={item.userId === user?.uid ? handleDeletePost : undefined}
-            onUserPress={handleUserPress}
-            isOwnPost={item.userId === user?.uid}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>No posts yet.</Text>
+              </View>
+            }
           />
-        )}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No posts yet.</Text>
-          </View>
-        }
-      />
 
-      <Modal
-        animationType="slide"
-        transparent={false}
-        visible={commentModalVisible}
-        onRequestClose={() => {
-          setCommentModalVisible(false);
-          setSelectedPost(null);
-          setNewComment('');
-        }}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.modalContainer}
-        >
-          <View style={styles.modalHeader}>
-            <TouchableOpacity
-              onPress={() => {
-                setCommentModalVisible(false);
-                setSelectedPost(null);
-                setNewComment('');
-              }}
+          <Modal
+            animationType="slide"
+            transparent={false}
+            visible={commentModalVisible}
+            onRequestClose={() => {
+              setCommentModalVisible(false);
+              setSelectedPost(null);
+              setNewComment('');
+            }}
+          >
+            <ImageBackground 
+              source={{ uri: 'https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?q=80&w=1000' }} 
+              style={styles.backgroundImage}
             >
-              <FontAwesome name="arrow-left" size={20} color="#3498db" />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Comments</Text>
-            <View style={styles.headerSpacer} />
-          </View>
-
-          {selectedPost && (
-            <>
-              <View style={styles.modalPostPreview}>
-                <TouchableOpacity onPress={() => handleUserPress(selectedPost.userId)}>
-                  <Text style={styles.previewUserName}>{selectedPost.userName}</Text>
-                </TouchableOpacity>
-                <Text style={styles.previewText}>{selectedPost.text}</Text>
-              </View>
-
-              {loadingComments ? (
-                <View style={styles.loadingCommentsContainer}>
-                  <ActivityIndicator size="large" color="#3498db" />
-                </View>
-              ) : (
-                <FlatList
-                  data={selectedPost.comments}
-                  keyExtractor={(item) => item.id}
-                  renderItem={({ item }) => (
-                    <View style={styles.commentItem}>
-                      <TouchableOpacity onPress={() => handleUserPress(item.userId)}>
-                        <Text style={styles.commentUserName}>{item.userName}</Text>
-                      </TouchableOpacity>
-                      <Text style={styles.commentText}>{item.text}</Text>
-                    </View>
-                  )}
-                  ListEmptyComponent={<Text style={styles.emptyCommentsText}>No comments yet.</Text>}
-                />
-              )}
-
-              <View style={styles.commentInputContainer}>
-                <TextInput
-                  style={styles.commentInput}
-                  placeholder="Write a comment..."
-                  value={newComment}
-                  onChangeText={setNewComment}
-                  multiline
-                  editable={!submittingComment}
-                />
-                <TouchableOpacity
-                  style={styles.commentButton}
-                  onPress={addComment}
-                  disabled={!newComment.trim() || submittingComment}
+              <LinearGradient
+                colors={['rgba(45, 13, 83, 0.7)', 'rgba(76, 41, 122, 0.85)', 'rgba(30, 7, 55, 0.95)']}
+                style={styles.gradient}
+              >
+                <KeyboardAvoidingView
+                  behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                  style={styles.modalContainer}
                 >
-                  {submittingComment ? (
-                    <ActivityIndicator size="small" color="white" />
-                  ) : (
-                    <FontAwesome name="send" size={18} color="white" />
+                  <View style={styles.modalHeader}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setCommentModalVisible(false);
+                        setSelectedPost(null);
+                        setNewComment('');
+                      }}
+                    >
+                      <FontAwesome name="arrow-left" size={20} color="#B39DDB" />
+                    </TouchableOpacity>
+                    <Text style={styles.modalTitle}>Comments</Text>
+                    <View style={styles.headerSpacer} />
+                  </View>
+
+                  {selectedPost && (
+                    <>
+                      <View style={styles.modalPostPreview}>
+                        <TouchableOpacity onPress={() => handleUserPress(selectedPost.userId)}>
+                          <Text style={styles.previewUserName}>{selectedPost.userName}</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.previewText}>{selectedPost.text}</Text>
+                      </View>
+
+                      {loadingComments ? (
+                        <View style={styles.loadingCommentsContainer}>
+                          <ActivityIndicator size="large" color="#B39DDB" />
+                        </View>
+                      ) : (
+                        <FlatList
+                          data={selectedPost.comments}
+                          keyExtractor={(item) => item.id}
+                          renderItem={({ item }) => (
+                            <View style={styles.commentItem}>
+                              <TouchableOpacity onPress={() => handleUserPress(item.userId)}>
+                                <Text style={styles.commentUserName}>{item.userName}</Text>
+                              </TouchableOpacity>
+                              <Text style={styles.commentText}>{item.text}</Text>
+                            </View>
+                          )}
+                          ListEmptyComponent={<Text style={styles.emptyCommentsText}>No comments yet.</Text>}
+                        />
+                      )}
+
+                      <View style={styles.commentInputContainer}>
+                        <TextInput
+                          style={styles.commentInput}
+                          placeholder="Write a comment..."
+                          placeholderTextColor="#9E9E9E"
+                          value={newComment}
+                          onChangeText={setNewComment}
+                          multiline
+                          editable={!submittingComment}
+                        />
+                        <TouchableOpacity
+                          style={styles.commentButton}
+                          onPress={addComment}
+                          disabled={!newComment.trim() || submittingComment}
+                        >
+                          <LinearGradient
+                            colors={['#9C27B0', '#673AB7']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                            style={styles.gradientButton}
+                          >
+                            {submittingComment ? (
+                              <ActivityIndicator size="small" color="white" />
+                            ) : (
+                              <FontAwesome name="send" size={18} color="white" />
+                            )}
+                          </LinearGradient>
+                        </TouchableOpacity>
+                      </View>
+                    </>
                   )}
-                </TouchableOpacity>
-              </View>
-            </>
-          )}
-        </KeyboardAvoidingView>
-      </Modal>
-    </View>
+                </KeyboardAvoidingView>
+              </LinearGradient>
+            </ImageBackground>
+          </Modal>
+
+          {/* Animated stars */}
+          <View style={styles.starsContainer}>
+            {stars.map((star, i) => (
+              <Animated.View
+                key={i}
+                style={[
+                  styles.star,
+                  {
+                    top: star.top,
+                    left: star.left,
+                    width: star.size,
+                    height: star.size,
+                    opacity: star.opacity,
+                  },
+                ]}
+              />
+            ))}
+          </View>
+        </View>
+      </LinearGradient>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
+  backgroundImage: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  gradient: {
+    flex: 1,
+  },
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
   loadingContainer: {
     flex: 1,
@@ -549,18 +664,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   profileHeader: {
-    backgroundColor: 'white',
+    backgroundColor: 'rgba(30, 7, 55, 0.7)',
     padding: 20,
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: 'rgba(179, 157, 219, 0.3)',
     marginBottom: 10,
   },
   profileImage: {
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: '#3498db',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 10,
@@ -573,12 +687,12 @@ const styles = StyleSheet.create({
   profileName: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#2c3e50',
+    color: '#D1C4E9',
     marginBottom: 5,
   },
   postCount: {
     fontSize: 16,
-    color: '#7f8c8d',
+    color: '#B39DDB',
     marginBottom: 15,
   },
   actionButtonContainer: {
@@ -587,20 +701,16 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   chatButton: {
-    backgroundColor: '#3498db',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
     borderRadius: 5,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 120,
+    overflow: 'hidden',
   },
   addFriendButton: {
-    backgroundColor: '#2ecc71',
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  gradientButton: {
     paddingVertical: 10,
     paddingHorizontal: 20,
-    borderRadius: 5,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -617,47 +727,49 @@ const styles = StyleSheet.create({
   emptyContainer: {
     padding: 40,
     alignItems: 'center',
-    backgroundColor: 'white',
+    backgroundColor: 'rgba(30, 7, 55, 0.7)',
+    borderWidth: 1,
+    borderColor: 'rgba(179, 157, 219, 0.3)',
+    borderRadius: 15,
   },
   emptyText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#7f8c8d',
+    color: '#D1C4E9',
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     padding: 15,
-    backgroundColor: 'white',
+    backgroundColor: 'rgba(30, 7, 55, 0.7)',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: 'rgba(179, 157, 219, 0.3)',
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2c3e50',
+    color: '#FFFFFF',
   },
   headerSpacer: {
     width: 30,
   },
   modalPostPreview: {
     padding: 15,
-    backgroundColor: 'white',
+    backgroundColor: 'rgba(30, 7, 55, 0.7)',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: 'rgba(179, 157, 219, 0.3)',
   },
   previewUserName: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#2c3e50',
+    color: '#D1C4E9',
   },
   previewText: {
     fontSize: 16,
-    color: '#2c3e50',
+    color: '#FFFFFF',
     marginTop: 5,
   },
   loadingCommentsContainer: {
@@ -667,45 +779,58 @@ const styles = StyleSheet.create({
   },
   commentItem: {
     padding: 10,
-    backgroundColor: 'white',
+    backgroundColor: 'rgba(30, 7, 55, 0.7)',
     marginVertical: 5,
+    marginHorizontal: 10,
     borderRadius: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(179, 157, 219, 0.3)',
   },
   commentUserName: {
     fontWeight: 'bold',
-    color: '#2c3e50',
+    color: '#D1C4E9',
   },
   commentText: {
     marginTop: 5,
-    color: '#2c3e50',
+    color: '#FFFFFF',
   },
   emptyCommentsText: {
     textAlign: 'center',
-    color: '#7f8c8d',
+    color: '#D1C4E9',
     padding: 20,
   },
   commentInputContainer: {
     flexDirection: 'row',
     padding: 15,
-    backgroundColor: 'white',
+    backgroundColor: 'rgba(30, 7, 55, 0.7)',
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
+    borderTopColor: 'rgba(179, 157, 219, 0.3)',
   },
   commentInput: {
     flex: 1,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 20,
     paddingHorizontal: 15,
     paddingVertical: 10,
     maxHeight: 100,
+    color: '#FFFFFF',
   },
   commentButton: {
-    backgroundColor: '#3498db',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
     marginLeft: 10,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  starsContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: -1,
+  },
+  star: {
+    position: 'absolute',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
   },
 });

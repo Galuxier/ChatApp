@@ -9,13 +9,19 @@ import {
   ActivityIndicator, 
   TextInput,
   SafeAreaView,
-  StatusBar
+  StatusBar,
+  ImageBackground,
+  Animated,
+  Dimensions,
 } from 'react-native';
 import { collection, query, where, onSnapshot, getDocs, doc, getDoc, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/auth';
 import { router, useFocusEffect } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+
+const { width, height } = Dimensions.get('window');
 
 interface Chat {
   id: string;
@@ -33,6 +39,15 @@ export default function FriendsScreen() {
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const { user } = useAuth();
+
+  // Animation for stars
+  const stars = [...Array(20)].map(() => ({
+    top: Math.random() * height,
+    left: Math.random() * width,
+    size: Math.random() * 3 + 1,
+    opacity: new Animated.Value(Math.random() * 0.5 + 0.1),
+    duration: Math.random() * 2000 + 1000,
+  }));
 
   useEffect(() => {
     let chatListenerUnsubscribe: (() => void) | null = null;
@@ -83,15 +98,15 @@ export default function FriendsScreen() {
               );
               
               const messagesSnapshot = await getDocs(messagesQuery);
-              let lastMessage = 'No messages yet';
+              let lastMessage = 'No transmissions yet';
               let timestamp = new Date();
               
               if (!messagesSnapshot.empty) {
                 const lastMessageData = messagesSnapshot.docs[0].data();
-                lastMessage = lastMessageData.text || 'No messages yet';
+                lastMessage = lastMessageData.text || 'No transmissions yet';
                 timestamp = lastMessageData.timestamp?.toDate() || new Date();
               } else if (chatInfo?.lastMessageTime) {
-                lastMessage = chatInfo.lastMessage || 'No messages yet';
+                lastMessage = chatInfo.lastMessage || 'No transmissions yet';
                 timestamp = chatInfo.lastMessageTime.toDate() || new Date();
               }
               
@@ -108,7 +123,7 @@ export default function FriendsScreen() {
               return {
                 id: chatId,
                 userId: friendId,
-                displayName: userData?.displayName || 'Unknown User',
+                displayName: userData?.displayName || 'Unknown Contact',
                 profileImage: userData?.profileImage || null,
                 lastMessage,
                 timestamp,
@@ -142,16 +157,14 @@ export default function FriendsScreen() {
                       prevChat.id === chat.id 
                         ? {
                             ...prevChat,
-                            lastMessage: lastMessageData.text || 'No message',
+                            lastMessage: lastMessageData.text || 'No transmission',
                             timestamp: lastMessageData.timestamp?.toDate() || new Date(),
                             unreadCount
                           } 
                         : prevChat
                     ).sort((a, b) => b.timestamp - a.timestamp)];
                     
-                    // Also update filtered chats with search query
                     setFilteredChats(filterChatsByName(updatedChats, searchQuery));
-                    
                     return updatedChats;
                   });
                 },
@@ -177,6 +190,25 @@ export default function FriendsScreen() {
     };
 
     fetchChats();
+
+    // Animate stars twinkling
+    stars.forEach(star => {
+      const twinkle = () => {
+        Animated.sequence([
+          Animated.timing(star.opacity, {
+            toValue: Math.random() * 0.7 + 0.3,
+            duration: star.duration,
+            useNativeDriver: true,
+          }),
+          Animated.timing(star.opacity, {
+            toValue: Math.random() * 0.5 + 0.1,
+            duration: star.duration,
+            useNativeDriver: true,
+          }),
+        ]).start(twinkle);
+      };
+      twinkle();
+    });
 
     return () => {
       if (chatListenerUnsubscribe) chatListenerUnsubscribe();
@@ -235,162 +267,228 @@ export default function FriendsScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#3498db" />
-      </View>
+      <ImageBackground 
+        source={{ uri: 'https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?q=80&w=1000' }} 
+        style={styles.backgroundImage}
+      >
+        <LinearGradient
+          colors={['rgba(45, 13, 83, 0.7)', 'rgba(76, 41, 122, 0.85)', 'rgba(30, 7, 55, 0.95)']}
+          style={styles.gradient}
+        >
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#B39DDB" />
+            <Text style={styles.loadingText}>Scanning for Contacts...</Text>
+          </View>
+        </LinearGradient>
+      </ImageBackground>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Friends</Text>
-        <TouchableOpacity 
-          style={styles.addButton}
-          onPress={() => router.push('/add-friend')}
-        >
-          <FontAwesome name="user-plus" size={18} color="white" />
-        </TouchableOpacity>
-      </View>
-      
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchBar}>
-          <FontAwesome name="search" size={16} color="#95a5a6" style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search conversations"
-            placeholderTextColor="#95a5a6"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            clearButtonMode="while-editing"
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={clearSearch} style={styles.clearButton}>
-              <FontAwesome name="times-circle" size={16} color="#95a5a6" />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      {filteredChats.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          {searchQuery ? (
-            <>
-              <FontAwesome name="search" size={50} color="#bdc3c7" style={styles.emptyIcon} />
-              <Text style={styles.emptyTitle}>No matches found</Text>
-              <Text style={styles.emptyText}>No friends match "{searchQuery}"</Text>
-              <TouchableOpacity 
-                style={styles.clearSearchButton}
-                onPress={clearSearch}
-              >
-                <Text style={styles.clearSearchButtonText}>Clear Search</Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <FontAwesome name="users" size={60} color="#bdc3c7" style={styles.emptyIcon} />
-              <Text style={styles.emptyTitle}>No conversations yet</Text>
-              <Text style={styles.emptyText}>Add friends to start chatting</Text>
-              <TouchableOpacity 
-                style={styles.emptyButton}
-                onPress={() => router.push('/add-friend')}
-              >
-                <FontAwesome name="user-plus" size={16} color="white" style={styles.buttonIcon} />
-                <Text style={styles.emptyButtonText}>Add New Friend</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-      ) : (
-        <FlatList
-          data={filteredChats}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContainer}
-          renderItem={({ item }) => (
+    <ImageBackground 
+      source={{ uri: 'https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?q=80&w=1000' }} 
+      style={styles.backgroundImage}
+    >
+      <LinearGradient
+        colors={['rgba(45, 13, 83, 0.7)', 'rgba(76, 41, 122, 0.85)', 'rgba(30, 7, 55, 0.95)']}
+        style={styles.gradient}
+      >
+        <SafeAreaView style={styles.safeArea}>
+          <StatusBar barStyle="light-content" backgroundColor="transparent" />
+          
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>Contacts</Text>
             <TouchableOpacity 
-              style={styles.chatItem}
-              onPress={() => router.push(`/chat/${item.userId}`)}
+              style={styles.addButton}
+              onPress={() => router.push('/add-friend')}
             >
-              <View style={[styles.avatarContainer, item.unreadCount > 0 && styles.activeAvatarContainer]}>
-                {item.profileImage ? (
-                  <Image source={{ uri: item.profileImage }} style={styles.avatar} />
-                ) : (
-                  <View style={[styles.avatarFallback, { backgroundColor: getColorFromName(item.displayName) }]}>
-                    <Text style={styles.avatarText}>
-                      {getInitials(item.displayName)}
-                    </Text>
-                  </View>
-                )}
-                {item.unreadCount > 0 && (
-                  <View style={styles.unreadBadge}>
-                    <Text style={styles.unreadText}>
-                      {item.unreadCount > 99 ? '99+' : item.unreadCount}
-                    </Text>
-                  </View>
-                )}
-              </View>
-              
-              <View style={styles.chatInfo}>
-                <View style={styles.chatHeader}>
-                  <Text 
-                    style={[styles.chatName, item.unreadCount > 0 && styles.unreadChatName]}
-                    numberOfLines={1}
-                  >
-                    {item.displayName}
-                  </Text>
-                  <Text style={[styles.chatTime, item.unreadCount > 0 && styles.unreadChatTime]}>
-                    {formatTime(item.timestamp)}
-                  </Text>
-                </View>
-                <Text 
-                  style={[styles.chatMessage, item.unreadCount > 0 && styles.unreadChatMessage]}
-                  numberOfLines={1}
-                >
-                  {item.lastMessage}
-                </Text>
-              </View>
+              <LinearGradient
+                colors={['#9C27B0', '#673AB7']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.gradientButton}
+              >
+                <FontAwesome name="user-plus" size={18} color="white" />
+              </LinearGradient>
             </TouchableOpacity>
+          </View>
+          
+          {/* Search Bar */}
+          <View style={styles.searchContainer}>
+            <View style={styles.searchBar}>
+              <FontAwesome name="search" size={16} color="#B39DDB" style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search contacts"
+                placeholderTextColor="#B39DDB"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                clearButtonMode="while-editing"
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={clearSearch} style={styles.clearButton}>
+                  <FontAwesome name="times-circle" size={16} color="#B39DDB" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {filteredChats.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              {searchQuery ? (
+                <>
+                  <FontAwesome name="search" size={50} color="#B39DDB" style={styles.emptyIcon} />
+                  <Text style={styles.emptyTitle}>No signals detected</Text>
+                  <Text style={styles.emptyText}>No contacts match "{searchQuery}"</Text>
+                  <TouchableOpacity 
+                    style={styles.clearSearchButton}
+                    onPress={clearSearch}
+                  >
+                    <Text style={styles.clearSearchButtonText}>Clear Search</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <FontAwesome name="users" size={60} color="#B39DDB" style={styles.emptyIcon} />
+                  <Text style={styles.emptyTitle}>No contacts yet</Text>
+                  <Text style={styles.emptyText}>Add contacts to begin transmission</Text>
+                  <TouchableOpacity 
+                    style={styles.emptyButton}
+                    onPress={() => router.push('/add-friend')}
+                  >
+                    <LinearGradient
+                      colors={['#9C27B0', '#673AB7']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.gradientButton}
+                    >
+                      <FontAwesome name="user-plus" size={16} color="white" style={styles.buttonIcon} />
+                      <Text style={styles.emptyButtonText}>Add New Contact</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          ) : (
+            <FlatList
+              data={filteredChats}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.listContainer}
+              renderItem={({ item }) => (
+                <TouchableOpacity 
+                  style={styles.chatItem}
+                  onPress={() => router.push(`/chat/${item.userId}`)}
+                >
+                  <View style={[styles.avatarContainer, item.unreadCount > 0 && styles.activeAvatarContainer]}>
+                    {item.profileImage ? (
+                      <Image source={{ uri: item.profileImage }} style={styles.avatar} />
+                    ) : (
+                      <LinearGradient
+                        colors={['#9C27B0', '#673AB7']}
+                        style={styles.avatarFallback}
+                      >
+                        <Text style={styles.avatarText}>
+                          {getInitials(item.displayName)}
+                        </Text>
+                      </LinearGradient>
+                    )}
+                    {item.unreadCount > 0 && (
+                      <View style={styles.unreadBadge}>
+                        <Text style={styles.unreadText}>
+                          {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  
+                  <View style={styles.chatInfo}>
+                    <View style={styles.chatHeader}>
+                      <Text 
+                        style={[styles.chatName, item.unreadCount > 0 && styles.unreadChatName]}
+                        numberOfLines={1}
+                      >
+                        {item.displayName}
+                      </Text>
+                      <Text style={[styles.chatTime, item.unreadCount > 0 && styles.unreadChatTime]}>
+                        {formatTime(item.timestamp)}
+                      </Text>
+                    </View>
+                    <Text 
+                      style={[styles.chatMessage, item.unreadCount > 0 && styles.unreadChatMessage]}
+                      numberOfLines={1}
+                    >
+                      {item.lastMessage}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+            />
           )}
-        />
-      )}
-    </SafeAreaView>
+
+          {/* Animated stars */}
+          <View style={styles.starsContainer}>
+            {stars.map((star, i) => (
+              <Animated.View
+                key={i}
+                style={[
+                  styles.star,
+                  {
+                    top: star.top,
+                    left: star.left,
+                    width: star.size,
+                    height: star.size,
+                    opacity: star.opacity,
+                  },
+                ]}
+              />
+            ))}
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
+    </ImageBackground>
   );
 }
 
 // Function to generate consistent color based on name
 const getColorFromName = (name: string) => {
-  // List of pleasant colors for avatars
   const colors = [
-    '#3498db', '#2ecc71', '#9b59b6', '#e67e22', '#1abc9c',
-    '#f1c40f', '#e74c3c', '#34495e', '#16a085', '#27ae60',
-    '#8e44ad', '#d35400', '#2980b9', '#c0392b'
+    '#9C27B0', '#673AB7', '#3F51B5', '#00DDEB', '#1E90FF',
+    '#FF4081', '#FF5722', '#4CAF50', '#E91E63', '#2196F3',
+    '#8BC34A', '#F44336', '#03A9F4', '#CDDC39'
   ];
   
-  // Simple hash function for name
   let hash = 0;
   for (let i = 0; i < name.length; i++) {
     hash = name.charCodeAt(i) + ((hash << 5) - hash);
   }
   
-  // Select color based on hash
   const index = Math.abs(hash) % colors.length;
   return colors[index];
 };
 
 const styles = StyleSheet.create({
+  backgroundImage: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  gradient: {
+    flex: 1,
+  },
   safeArea: {
     flex: 1,
-    backgroundColor: '#fff',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
+  },
+  loadingText: {
+    color: '#D1C4E9',
+    fontSize: 16,
+    marginTop: 10,
+    fontFamily: 'monospace',
   },
   header: {
     flexDirection: 'row',
@@ -398,42 +496,46 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 15,
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(30, 7, 55, 0.7)',
     borderBottomWidth: 1,
-    borderBottomColor: '#f5f5f5',
+    borderBottomColor: 'rgba(179, 157, 219, 0.3)',
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#2c3e50',
+    color: '#D1C4E9',
+    fontFamily: 'monospace',
   },
   addButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#3498db',
+    overflow: 'hidden',
+  },
+  gradientButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
+    flexDirection: 'row',
   },
   searchContainer: {
     paddingHorizontal: 20,
     paddingVertical: 10,
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(30, 7, 55, 0.7)',
     borderBottomWidth: 1,
-    borderBottomColor: '#f5f5f5',
+    borderBottomColor: 'rgba(179, 157, 219, 0.3)',
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f6f8fa',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 10,
     paddingHorizontal: 15,
     height: 45,
+    borderWidth: 1,
+    borderColor: 'rgba(179, 157, 219, 0.3)',
   },
   searchIcon: {
     marginRight: 10,
@@ -441,13 +543,15 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: '#34495e',
+    color: '#FFFFFF',
+    fontFamily: 'monospace',
   },
   clearButton: {
     padding: 5,
   },
   listContainer: {
     paddingTop: 5,
+    paddingBottom: 20,
   },
   chatItem: {
     flexDirection: 'row',
@@ -457,12 +561,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginHorizontal: 10,
     marginVertical: 5,
-    backgroundColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    backgroundColor: 'rgba(30, 7, 55, 0.7)',
+    borderWidth: 1,
+    borderColor: 'rgba(179, 157, 219, 0.3)',
   },
   avatarContainer: {
     position: 'relative',
@@ -475,7 +576,8 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#e0e0e0',
+    borderWidth: 2,
+    borderColor: '#B39DDB',
   },
   avatarFallback: {
     width: 56,
@@ -483,6 +585,8 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#B39DDB',
   },
   avatarText: {
     color: 'white',
@@ -493,7 +597,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: -2,
     right: -2,
-    backgroundColor: '#e74c3c',
+    backgroundColor: '#FF4081',
     borderRadius: 12,
     minWidth: 22,
     height: 22,
@@ -501,7 +605,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 5,
     borderWidth: 2,
-    borderColor: '#fff',
+    borderColor: 'rgba(30, 7, 55, 0.7)',
   },
   unreadText: {
     color: 'white',
@@ -521,27 +625,30 @@ const styles = StyleSheet.create({
   chatName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#2c3e50',
+    color: '#D1C4E9',
     maxWidth: '80%',
+    fontFamily: 'monospace',
   },
   unreadChatName: {
     fontWeight: '800',
-    color: '#000',
+    color: '#FFFFFF',
   },
   chatTime: {
     fontSize: 12,
-    color: '#95a5a6',
+    color: '#B39DDB',
+    fontFamily: 'monospace',
   },
   unreadChatTime: {
-    color: '#3498db',
+    color: '#FF4081',
   },
   chatMessage: {
     fontSize: 14,
-    color: '#7f8c8d',
+    color: '#B39DDB',
     marginRight: 20,
+    fontFamily: 'monospace',
   },
   unreadChatMessage: {
-    color: '#34495e',
+    color: '#FFFFFF',
     fontWeight: '500',
   },
   emptyContainer: {
@@ -549,7 +656,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(30, 7, 55, 0.7)',
   },
   emptyIcon: {
     marginBottom: 20,
@@ -558,46 +665,54 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '700',
     marginBottom: 10,
-    color: '#2c3e50',
+    color: '#D1C4E9',
+    fontFamily: 'monospace',
   },
   emptyText: {
     fontSize: 16,
-    color: '#7f8c8d',
+    color: '#B39DDB',
     textAlign: 'center',
     marginBottom: 30,
     maxWidth: '80%',
+    fontFamily: 'monospace',
   },
   emptyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#3498db',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
     borderRadius: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  buttonIcon: {
-    marginRight: 8,
+    overflow: 'hidden',
   },
   emptyButtonText: {
     color: 'white',
     fontWeight: '600',
     fontSize: 16,
+    marginLeft: 8,
+  },
+  buttonIcon: {
+    marginRight: 8,
   },
   clearSearchButton: {
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#3498db',
+    borderColor: '#B39DDB',
   },
   clearSearchButtonText: {
-    color: '#3498db',
+    color: '#B39DDB',
     fontWeight: '600',
     fontSize: 16,
-  }
+    fontFamily: 'monospace',
+  },
+  starsContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: -1,
+  },
+  star: {
+    position: 'absolute',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+  },
 });
